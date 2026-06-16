@@ -62,6 +62,20 @@ resource "aws_instance" "jump" {
   vpc_security_group_ids = [aws_security_group.jump.id]
   key_name               = aws_key_pair.fleet.key_name
 
+  user_data = templatefile("${path.module}/cloud-init/jump.yaml.tftpl", {
+    project_name           = local.project_name
+    github_owner           = local.github_owner
+    github_repo            = local.github_repo
+    fleet_private_key_b64  = base64encode(tls_private_key.fleet.private_key_pem)
+    jump_private_ip        = local.ec2_jump_cidr
+    lb_private_ip          = aws_instance.lb.private_ip
+    app_vm1_private_ip     = aws_instance.app_vm1.private_ip
+    app_vm2_private_ip     = aws_instance.app_vm2.private_ip
+  })
+
+  # Replace the instance when the bootstrap script changes
+  user_data_replace_on_change = true
+
   tags = {
     Name = "${local.project_name}-jump"
     Role = "jump"

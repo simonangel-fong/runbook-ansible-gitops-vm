@@ -1,0 +1,71 @@
+#cloud-config
+#
+# Jump host bootstrap.
+# Goal: by the end of first boot, jump can:
+#   - SSH to lb / app-vm1 / app-vm2 using the fleet key
+#   - run `ansible` and `ansible-playbook`
+#   - host Jenkins on localhost:8080 (reached from laptop via SSH tunnel)
+#
+# Re-running cloud-init is NOT supported. To change anything below, either
+# replace the instance (terraform taint -> apply) or use Ansible.
+
+package_update: true
+
+# Java 21 required by current Jenkins LTS (per https://www.jenkins.io/doc/book/installing/linux/).
+# fontconfig is a Jenkins runtime dep for headless rendering.
+packages:
+  - git
+  - ansible-core
+  - java-21-amazon-corretto
+  - fontconfig
+  - wget
+
+write_files:
+  # ec2-user-owned files use defer:true so cc_users_groups runs first.
+  # Without defer, write_files runs before ec2-user exists and aborts the
+  # whole block at the first ec2-user-owned entry.
+
+  - path: /home/ec2-user/.ssh/${project_name}.pem
+    owner: ec2-user:ec2-user
+    permissions: "0400"
+    encoding: b64
+    content: ${fleet_private_key_b64}
+    defer: true
+
+  - path: /home/ec2-user/.ssh/config
+    owner: ec2-user:ec2-user
+    permissions: "0600"
+    defer: true
+    content: |
+      Host lb app-vm1 app-vm2 ${lb_private_ip} ${app_vm1_private_ip} ${app_vm2_private_ip}
+        User ec2-user
+        IdentityFile /home/ec2-user/.ssh/${project_name}.pem
+        StrictHostKeyChecking accept-new
+
+  # Internal "DNS" via /etc/hosts (matches aws_design.md §8)
+  - path: /etc/hosts.fleet
+    owner: root:root
+    permissions: "0644"
+    content: |
+      ${jump_private_ip}     jump
+      ${lb_private_ip}       lb
+      ${app_vm1_private_ip}  app-vm1
+      ${app_vm2_private_ip}  app-vm2
+
+runcmd:
+  # /etc/hosts fleet entries (idempotent)
+  - bash -c 'grep -q "# gitops-vm fleet" /etc/hosts || { echo "# gitops-vm fleet" >> /etc/hosts; cat /etc/hosts.fleet >> /etc/hosts; }'
+
+  # Jenkins install — follows https://www.jenkins.io/doc/book/installing/linux/.
+  # The upstream .repo file declares the current GPG key URL (it rotates with
+  # the repo signing), so we fetch the .repo file as the source of truth and
+  # import whichever key it points at instead of hardcoding a key version.
+  - wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+  - rpm --import https://pkg.jenkins.io/rpm-stable/repodata/repomd.xml.key
+  - dnf install -y jenkins
+  - systemctl enable --now jenkins
+
+  # Clone the project repo as ec2-user. `runuser -u` is the modern equivalent
+  # of `sudo -u` and works correctly under cloud-init's runcmd context
+  # (which has no controlling TTY).
+  - runuser -u ec2-user -- git clone https://github.com/${github_owner}/${github_repo}.git /home/ec2-user/${github_repo}
