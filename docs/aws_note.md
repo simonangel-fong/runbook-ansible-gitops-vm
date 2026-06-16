@@ -51,3 +51,21 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 cd ansible
 ansible all -m ping -o
 ```
+
+---
+
+## Build Go
+
+```sh
+cd app
+VERSION=$(cat VERSION)
+go build -ldflags "-X main.version=$VERSION" -o /tmp/gitops-api .
+ls -la /tmp/gitops-api
+# -rwxrwxr-x 1 ubuntu ubuntu 20719788 Jun 16 22:00 /tmp/gitops-api
+
+cd ../ansible
+ansible-playbook deploy.yml \
+  -e binary_src=/tmp/gitops-api \
+  -e app_version=$VERSION
+```
+ 

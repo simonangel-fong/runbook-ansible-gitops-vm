@@ -20,13 +20,6 @@
   serial: 1                # one host at a time; clean drain on restart
   any_errors_fatal: true   # halt the whole play if any host fails
 
-  vars_prompt:
-    - name: confirm_binary
-      prompt: "binary_src and app_version must both be set via -e. Proceed?"
-      private: false
-      default: "yes"
-      when: binary_src is not defined or app_version is not defined
-
   pre_tasks:
     - name: Sanity-check required extra-vars
       ansible.builtin.assert:
