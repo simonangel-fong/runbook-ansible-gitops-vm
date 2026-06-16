@@ -401,3 +401,417 @@ curl -i http://localhost:8080/healthy
 - `app/handlers.go` (`/healthz` branches on `healthy`)
 - `gitops-api` (default build, healthy)
 - `gitops-api-bad` (failure-injection build, returns 500 on `/healthz`)
+
+---
+
+## Phase 5
+
+**Goal.** `SIGTERM` triggers a 10s drain. New connections refused, in-flight
+requests complete, then the process exits. This is what stops
+`systemctl restart` from killing connections mid-canary.
+
+### Files
+
+```go
+// app/main.go
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/gin-gonic/gin"
+)
+
+var version = "dev"
+var healthy = "true"
+
+func main() {
+	r := gin.Default()
+
+	// GET /
+	r.GET("/", rootHandler)
+
+	// GET /healthz
+	r.GET("/healthz", healthzHandler)
+
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: r,
+	}
+
+	// Run the server in a goroutine so main can wait on signals.
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	// Wait for SIGINT (Ctrl+C) or SIGTERM (systemctl stop/restart).
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("shutting down")
+
+	// 10s drain — in-flight requests complete; new ones rejected.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("forced shutdown: %s\n", err)
+	}
+	log.Println("server exited cleanly")
+}
+```
+
+`handlers.go` is unchanged from Phase 4.
+
+### Verify "Done when"
+
+- SIGTERM exits cleanly
+
+Terminal A:
+
+```sh
+cd app
+go run .
+```
+
+Terminal B — send SIGTERM:
+
+```sh
+# Linux / Mac / Git Bash on Windows
+kill -TERM $(pgrep -f "exe/app|gitops-api")
+```
+
+Terminal A should print:
+
+```
+shutting down
+server exited cleanly
+```
+
+and exit within 10s.
+
+**Check B — new connections refused after SIGTERM:**
+
+```sh
+curl http://localhost:8080/healthz
+# curl: (7) Failed to connect to localhost port 8080: Connection refused
+```
+
+**Check C — in-flight request completes (manual drain check):**
+
+Temporarily add a slow route to `main.go` *before* this check, then remove
+it before committing:
+
+```go
+r.GET("/sleep", func(c *gin.Context) {
+	time.Sleep(5 * time.Second)
+	c.String(200, "done")
+})
+```
+
+Terminal B (start the slow request):
+
+```sh
+curl http://localhost:8080/sleep &
+```
+
+Within ~1s, Terminal C sends SIGTERM:
+
+```sh
+kill -TERM $(pgrep -f "exe/app|gitops-api")
+```
+
+Terminal A logs `shutting down`. The `curl` from Terminal B still completes
+with `done` ~4s later, *before* the server exits. New requests in the
+meantime are refused.
+
+Remove the `/sleep` route before committing.
+
+### PowerShell equivalents (Windows host)
+
+PowerShell does not have `pkill` / `kill -TERM`. Windows has no real
+`SIGTERM` — the closest local approximation is Ctrl+C in the console where
+the server is running, which the Go runtime maps to `SIGINT`, and our
+`signal.Notify` catches that path too.
+
+```powershell
+# In the server's console window:
+# Press Ctrl+C — should log "shutting down" then "server exited cleanly"
+```
+
+For the most faithful test of `SIGTERM` + `systemctl` behavior, run this
+phase under WSL or on the actual EC2 target (AL2023). Local Windows is fine
+for Check A via Ctrl+C; Check C is worth doing once on Linux before
+declaring the phase done.
+
+- Confirm files created / changed
+
+- `app/main.go` (replaced `r.Run` with explicit `http.Server` + signal handling)
+- `app/handlers.go` (unchanged)
+
+### Notes / adjustments
+
+_(record anything you had to change.)_
+
+### Next
+
+Phase 6 — three `httptest` tests (root, healthy `/healthz`, failing `/healthz`).
+
+---
+
+## Phase 6
+
+**Goal.** One `httptest` test per behavior. Confirms the contract holds; runs
+in milliseconds. Three tests total — root, healthy `/healthz`, failing
+`/healthz`. No coverage chasing.
+
+Notes on the design:
+
+- Tests live in `app/handlers_test.go` (same package `main`, so they can read
+  and mutate `version` and `healthy`).
+- Each test builds its own `gin.New()` engine and registers only the route
+  under test — keeps each test isolated from `main.go`'s wiring.
+- `gin.SetMode(gin.TestMode)` silences gin's debug logging in test output.
+- The healthy/failing healthz tests set the package-level `healthy` var
+  directly. Use `t.Cleanup` to restore it so test order doesn't matter.
+
+### Files
+
+```go
+// app/handlers_test.go
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+)
+
+func init() {
+	gin.SetMode(gin.TestMode)
+}
+
+func TestRootHandler(t *testing.T) {
+	// Pin version so the assertion is deterministic.
+	original := version
+	version = "test-1.2.3"
+	t.Cleanup(func() { version = original })
+
+	r := gin.New()
+	r.GET("/", rootHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", w.Code)
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("body not JSON: %v", err)
+	}
+	if body["app"] != "VM GitOps Practices" {
+		t.Errorf("app: got %q, want %q", body["app"], "VM GitOps Practices")
+	}
+	if body["version"] != "test-1.2.3" {
+		t.Errorf("version: got %q, want %q", body["version"], "test-1.2.3")
+	}
+}
+
+func TestHealthzHealthy(t *testing.T) {
+	original := healthy
+	healthy = "true"
+	t.Cleanup(func() { healthy = original })
+
+	r := gin.New()
+	r.GET("/healthz", healthzHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, want 200", w.Code)
+	}
+	if w.Body.String() != "ok" {
+		t.Errorf("body: got %q, want %q", w.Body.String(), "ok")
+	}
+}
+
+func TestHealthzFailing(t *testing.T) {
+	original := healthy
+	healthy = "false"
+	t.Cleanup(func() { healthy = original })
+
+	r := gin.New()
+	r.GET("/healthz", healthzHandler)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status: got %d, want 500", w.Code)
+	}
+	if w.Body.String() != "unhealthy" {
+		t.Errorf("body: got %q, want %q", w.Body.String(), "unhealthy")
+	}
+}
+```
+
+### Verify "Done when"
+
+```sh
+cd app
+go test -v
+# === RUN   TestRootHandler
+# --- PASS: TestRootHandler (0.00s)
+# === RUN   TestHealthzHealthy
+# --- PASS: TestHealthzHealthy (0.00s)
+# === RUN   TestHealthzFailing
+# --- PASS: TestHealthzFailing (0.00s)
+# PASS
+# ok      gitops-vm       0.239s
+```
+
+```sh
+go vet ./...
+# (no output = pass)
+```
+
+Coverage is not a target. Three tests = three behaviors covered. Move on.
+
+---
+
+## Phase 7
+
+**Goal.** Produce the binary Jenkins will produce: static, stripped, no CGO,
+no embedded local paths. Same `gitops-api`, smaller and portable across any
+AL2023 EC2 with no Go installed.
+
+Notes on the design:
+
+- `CGO_ENABLED=0` → no libc linkage. The binary runs on any Linux with a
+  compatible kernel, no glibc version surprises on the target VM.
+- `-trimpath` → removes local file paths from the binary. Cleaner for a
+  portfolio binary someone might `strings` out of curiosity.
+- `-s -w` (inside `-ldflags`) → strips the symbol table and DWARF debug info.
+  Roughly halves binary size. No effect on runtime behavior.
+- `GOOS=linux GOARCH=amd64` is explicit so cross-compiling from Windows or
+  Mac produces an AL2023-ready binary. On Linux it's a no-op.
+
+### Final build command (this goes into `Jenkinsfile.build`)
+
+```sh
+# From repo root
+VERSION=$(cat app/VERSION)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+  -trimpath \
+  -ldflags "-s -w -X main.version=${VERSION} -X main.healthy=true" \
+  -o gitops-api \
+  ./app
+```
+
+Rollback-demo "broken" build is the same command with `healthy=false`:
+
+```sh
+VERSION=$(cat app/VERSION)
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+  -trimpath \
+  -ldflags "-s -w -X main.version=${VERSION} -X main.healthy=false" \
+  -o gitops-api-bad \
+  ./app
+```
+
+### PowerShell equivalents (Windows host, cross-compiling for AL2023)
+
+```powershell
+$VERSION = (Get-Content app/VERSION -Raw).Trim()
+$env:CGO_ENABLED = "0"
+$env:GOOS         = "linux"
+$env:GOARCH       = "amd64"
+
+go build `
+  -trimpath `
+  -ldflags "-s -w -X main.version=$VERSION -X main.healthy=true" `
+  -o gitops-api `
+  ./app
+
+# Clean up env vars so later builds aren't surprised
+Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH
+```
+
+The output `gitops-api` (no `.exe`) is a Linux ELF binary — it will not run
+on Windows. That is correct; Jenkins will scp it to the AL2023 app VM where
+it does run.
+
+### Verify "Done when"
+
+**Check A — binary is statically linked (run on Linux / WSL):**
+
+```sh
+file ./gitops-api
+# gitops-api: ELF 64-bit LSB executable, x86-64, ... statically linked, ...
+```
+
+If you see `dynamically linked` here, `CGO_ENABLED=0` did not take effect.
+
+**Check B — binary is reasonably small:**
+
+```sh
+ls -lh gitops-api
+# -rwxr-xr-x  1 user  group   ~10M  ...  gitops-api
+```
+
+Should be under ~15 MB. The `-s -w` flags account for most of the savings.
+
+**Check C — no local paths leak into the binary:**
+
+```sh
+strings gitops-api | grep -E "/home|/Users|OneDrive" | head
+# (no output = pass)
+```
+
+Without `-trimpath`, you would see your build host's filesystem layout in
+this output — embarrassing for a public repo.
+
+**Check D — runs on a fresh AL2023 EC2 with no Go installed:**
+
+This is the real test, deferred until M1. For now, run locally on Linux/WSL:
+
+```sh
+./gitops-api
+# [GIN-debug] Listening and serving HTTP on :8080
+```
+
+```sh
+curl http://localhost:8080/
+# {"app":"VM GitOps Practices","version":"0.1.0"}
+
+curl http://localhost:8080/healthz
+# ok
+```
+
+### Notes / adjustments
+
+_(record anything you had to change.)_
+
+### Phase 7 → done
+
+The `app/` directory is complete. From here, the only reason to touch `app/`
+is to bump `app/VERSION`. Remaining work (M1 onward) is Ansible, Terraform,
+nginx, Jenkins — `infra/`, `ansible/`, `deploy/`, `jenkins/`.
+
+---
