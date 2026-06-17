@@ -12,6 +12,16 @@
     state: present
     update_cache: true
 
+- name: Template prometheus.yml with fleet scrape targets
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "promtool check config %s"
+  notify: Reload prometheus
+
 - name: Ensure prometheus is enabled and running
   ansible.builtin.systemd:
     name: prometheus
