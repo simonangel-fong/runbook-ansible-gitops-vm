@@ -18,7 +18,7 @@
 #                       every interval_seconds during each phase.
 #                       failure_threshold consecutive non-200s aborts.
 
-version: "0.1.0"
+version: "0.2.0"
 
 # Whether the binary should be healthy at runtime.
 # Default: true (normal release).
@@ -31,7 +31,7 @@ version: "0.1.0"
 #
 # Polarity is "is this build expected to be healthy?" so the safe default
 # (true) reads naturally and any false is a deliberate failure demo.
-build_healthy: true
+build_healthy: false
 
 phases:
   - weight_canary: 20
