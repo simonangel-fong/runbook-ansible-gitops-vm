@@ -121,13 +121,17 @@
     - name: Smoke test — GET /healthz
       ansible.builtin.uri:
         url: "http://{{ ansible_host }}:8080/healthz"
-        status_code: 200
+        # When demoing the canary failure path (release.yaml: build_unhealthy:
+        # true), we deploy a binary whose /healthz always returns 500. The
+        # deploy.yml smoke test still wants the process up, but accepts 500
+        # so the canary gate (in the Jenkinsfile) is what trips the failure.
+        status_code: "{{ [200, 500] if (expect_unhealthy | default(false) | bool) else [200] }}"
       delegate_to: localhost
       become: false
       retries: 6
       delay: 2
       register: healthz
-      until: healthz.status == 200
+      until: healthz.status in ([200, 500] if (expect_unhealthy | default(false) | bool) else [200])
 
     - name: Smoke test — GET / reports the expected version
       ansible.builtin.uri:

@@ -1,12 +1,18 @@
 // app/handlers.go
 package main
 
-import "github.com/gin-gonic/gin"
+import (
+	"os"
+
+	"github.com/gin-gonic/gin"
+)
 
 func rootHandler(c *gin.Context) {
+	host, _ := os.Hostname()
 	c.JSON(200, gin.H{
 		"app":     "VM GitOps Practices",
 		"version": version,
+		"host":    host,
 	})
 }
 

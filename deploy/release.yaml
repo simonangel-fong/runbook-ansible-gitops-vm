@@ -20,6 +20,12 @@
 
 version: "0.1.0"
 
+# Demo affordance — set true to bake `-X main.healthy=false` into the binary.
+# /healthz then returns 500, the canary phase gate trips, and the pipeline's
+# post { failure } drains LB traffic from the canary. The canary VM is *left*
+# on the broken binary — full symlink-back revert is Phase F.
+build_unhealthy: false
+
 phases:
   - weight_canary: 20
     hold_seconds: 15
