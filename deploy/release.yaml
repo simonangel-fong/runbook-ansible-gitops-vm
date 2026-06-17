@@ -18,7 +18,7 @@
 #                       every interval_seconds during each phase.
 #                       failure_threshold consecutive non-200s aborts.
 
-version: "0.2.0"
+version: "0.3.0"
 
 # Whether the binary should be healthy at runtime.
 # Default: true (normal release).

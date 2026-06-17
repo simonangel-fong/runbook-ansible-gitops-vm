@@ -10,16 +10,16 @@ This project is the deliberate counterpart to a Kubernetes + ArgoCD project.
 Together they cover both delivery models a hiring team might care about.
 
 ```
-                ┌─────────────────────┐
-                │   gitops-jump       │   Mgmt subnet, public via EIP
-                │   - Jenkins         │   (SSH tunnel for UI access)
-                │   - Ansible         │
-                └──────────┬──────────┘
-                           │ SSH (Ansible)
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-   ┌─────────┐        ┌─────────┐        ┌─────────┐
-   │ lb VM   │        │ app-vm1 │        │ app-vm2 │
+                ┌─────────────────────┐    ┌─────────────────────┐
+                │   gitops-jump       │    │   gitops-mon        │   Mgmt subnet
+                │   - Jenkins         │    │   - Prometheus      │   (SSH tunnel
+                │   - Ansible         │    │   - Grafana         │   for UI access)
+                └──────────┬──────────┘    └──────────┬──────────┘
+                           │ SSH (Ansible)            │ scrape /metrics
+        ┌──────────────────┼──────────────────┐       │
+        ▼                  ▼                  ▼       │
+   ┌─────────┐        ┌─────────┐        ┌─────────┐  │
+   │ lb VM   │        │ app-vm1 │        │ app-vm2 │◄─┘
    │ nginx   │◄──────►│ Go API  │        │ Go API  │
    │ (split) │ 8080   │ systemd │        │ systemd │
    └────┬────┘        └─────────┘        └─────────┘
@@ -84,6 +84,9 @@ ssh -i keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@$(terraform output -raw 
 # Bootstrap fleet (one time per fresh fleet)
 ssh -i keys/gitops-vm.pem ubuntu@$(terraform output -raw jump_public_ip)
 cd Project_GitOps_VM/ansible && ansible-playbook bootstrap.yml
+
+# Install Prometheus + Grafana on mon (one time)
+ansible-playbook mon.yml
 ```
 
 **The actual demo:**
@@ -105,12 +108,47 @@ git add deploy/release.yaml app/VERSION && git commit -m "demo: trigger rollback
 # -> 50/50 again, both VMs on last-good.
 ```
 
+## What The Demo Looks Like
+
+A Prometheus + Grafana stack runs on a fifth VM (`gitops-mon`) in the
+management subnet — the canonical on-prem pattern of "monitoring on the
+mgmt VLAN, never on the public internet". The app exports
+`gitops_api_*` metrics; the dashboard renders the canary phases and the
+rollback path so they're visible, not just described.
+
+Open it (SSH tunnel through jump, same posture as Jenkins):
+
+```powershell
+ssh -i infra/keys/gitops-vm.pem `
+    -L 3000:10.0.90.20:3000 `
+    ubuntu@$(terraform -chdir=infra output -raw jump_public_ip)
+# Browser: http://localhost:3000 — default admin/admin, force a reset
+```
+
+**Happy-path deploy:** request rate shifts from 100% stable → 20% canary →
+50% → 100% during the phase loop, then settles at 50/50 after promote.
+
+![Canary phase loop](docs/screenshots/canary-happy.png)
+
+**Failure demo (`build_healthy: false`):** the canary VM flips red on the
+"Healthy status" panel, error rate spikes on the canary host only, LB
+drains canary traffic, rollback restores the last-good binary, both
+panels return to green.
+
+![Canary failure + rollback](docs/screenshots/canary-failure.png)
+
+The dashboard JSON lives at
+[ansible/roles/grafana/files/canary-dashboard.json](ansible/roles/grafana/files/canary-dashboard.json) —
+provisioned at startup by Ansible, no manual import.
+
 ## Architecture
 
-Four EC2 VMs in one VPC, three subnets (DMZ / App / Mgmt) modelling the
+Five EC2 VMs in one VPC, three subnets (DMZ / App / Mgmt) modelling the
 canonical on-prem 3-zone network. Static private IPs, role-scoped Security
 Groups, SSH only via the jump host. App subnet has no internet route at
-all — belt + suspenders against accidental egress.
+all — belt + suspenders against accidental egress. A fifth VM,
+`gitops-mon`, runs Prometheus + Grafana on the Mgmt subnet — the
+canonical "monitoring on the management VLAN" on-prem pattern.
 
 See [docs/aws_design.md](docs/aws_design.md) for the full design rationale
 (why VMs, why no Packer in v1, why jump co-locates Jenkins+Ansible, the
@@ -158,8 +196,11 @@ Calling these out so the gaps read as deliberate, not as oversights.
   v1 uses stock Ubuntu 24.04 + cloud-init. Packer is the natural
   "golden template" pattern an on-prem team would use, deferred so the
   v1 demo ships.
-- **Prometheus + Grafana.** Health gate uses curl in the pipeline. A v2
-  with a 5xx-rate query as the gate is a one-screen swap.
+- **PromQL-driven canary gate.** Prometheus + Grafana on `gitops-mon`
+  observe the rollout, but the pipeline's health gate is still SSH-curl
+  against `/healthz`. Swapping it for a 5xx-rate PromQL query (the
+  Flagger / Argo Rollouts pattern) is the natural next step — the
+  "5xx ratio per VM" panel exists to set up exactly that story.
 - **TLS on the LB.** No cert-manager / ACM noise — the GitOps story is the
   point.
 - **Separate `gitops-admin` vs `gitops-fleet` SSH keys.** Currently one
@@ -216,6 +257,7 @@ for VM-native delivery.
 │   ├── 08_ec2_lb.tf           # nginx LB + SG + EIP
 │   ├── 09_ec2_app.tf          # 2x app VMs + SG (egress restricted to VPC)
 │   ├── 10_ansible_inventory.tf # renders ansible/inventory.ini from state
+│   ├── 11_ec2_mon.tf          # gitops-mon: SG + instance + sg-app scrape glue
 │   └── cloud-init/jump.yaml.tftpl # bootstraps Jenkins + Ansible + Go on jump
 ├── ansible/
 │   ├── ansible.cfg
@@ -224,8 +266,12 @@ for VM-native delivery.
 │   ├── deploy.yml             # release dir + symlink swap + smoke tests
 │   ├── nginx.yml              # weight setter (weight_canary parameter)
 │   ├── rollback.yml           # symlink back to last-good + restart
+│   ├── mon.yml                # installs Prometheus + Grafana on gitops-mon
 │   ├── templates/             # gitops-api.service.j2
-│   └── roles/nginx/           # upstream.conf.j2 templating
+│   └── roles/
+│       ├── nginx/             # upstream.conf.j2 templating
+│       ├── prometheus/        # scrape config templated from inventory
+│       └── grafana/           # datasource + provisioned canary dashboard
 ├── deploy/
 │   └── release.yaml           # source of truth — edit this to deploy
 ├── jenkins/
@@ -239,15 +285,18 @@ for VM-native delivery.
 
 ## Cost
 
-Approximately **$45/month** if left running 24/7 in `ca-central-1`:
+Approximately **$70/month** if left running 24/7 in `ca-central-1`:
 ~$17 for the `t3.small` jump host, ~$22 for three `t3.micro` (lb + 2× app),
-~$10 for EBS. `terraform destroy` between demo cycles brings it to ~$0;
-re-provisioning is ~3 minutes because the AMI lookup is just an API call
-(no image build in v1).
+~$17 for the `t3.small` mon host, ~$13 for EBS across five VMs.
+`terraform destroy` between demo cycles brings it to ~$0; re-provisioning
+is ~3 minutes because the AMI lookup is just an API call (no image
+build in v1).
 
 ## Status
 
-All six implementation phases (A through F per
-[docs/plan.md](docs/plan.md#L322)) are complete and verified end-to-end on
-EC2. Phase G — this README — is the deliverable. A recorded demo (showing
-the failure path with the `watch` loop) is planned as the final polish.
+All seven implementation phases (A through F per
+[docs/plan.md](docs/plan.md#L322), plus H per
+[docs/mon_plan.md](docs/mon_plan.md)) are complete and verified end-to-end
+on EC2. Phase G — this README — is the deliverable. A recorded demo
+(showing the failure path with the `watch` loop) is planned as the final
+polish.

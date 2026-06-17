@@ -32,13 +32,13 @@ The AWS layout mirrors the canonical 3-tier on-prem network:
 | Static IPs documented in IPAM, hostnames in internal DNS | Static private IPs; `/etc/hosts` snippet pushed by Ansible |
 | VMs ship from a golden template (vSphere / kickstart)    | Stock AL2023 AMI + Ansible bootstrap (see §7); Packer deferred to v2 |
 | Control plane co-located on "utility servers"            | Jenkins + Ansible + jump duties on a single Mgmt-zone VM   |
+| Agent-based monitoring on a management VLAN host         | `gitops-mon` runs Prometheus + Grafana in the Mgmt subnet  |
 | Change control via tickets and approvals                 | Replaced by Git commits as the change record (the point)   |
 
 Patterns intentionally **not** modelled in v1, called out so reviewers see the
-omissions as deliberate: internal patch mirror (Spacewalk/Pulp), agent-based
-monitoring (Zabbix/Prometheus), SSH cert authority + session recording (Vault
-SSH / Teleport / tlog), backup target (Veeam/Restic). All listed as v2 in
-the README.
+omissions as deliberate: internal patch mirror (Spacewalk/Pulp), SSH cert
+authority + session recording (Vault SSH / Teleport / tlog), backup target
+(Veeam/Restic). All listed as v2 in the README.
 
 ## 3. Region and AZ
 
@@ -87,6 +87,7 @@ management network is an on-prem habit worth borrowing.
 | LB         | `gitops-lb`      | `lb`         | `t3.micro` | DMZ    | 10.0.10.20 | EIP       |
 | App canary | `gitops-app-vm1` | `app-vm1`    | `t3.micro` | App    | 10.0.20.11 | none      |
 | App stable | `gitops-app-vm2` | `app-vm2`    | `t3.micro` | App    | 10.0.20.12 | none      |
+| Monitoring | `gitops-mon`     | `mon`        | `t3.small` | Mgmt   | 10.0.90.20 | none      |
 
 - **AMI**: latest AL2023, resolved at apply time via `data "aws_ami"` filter
   (owner Amazon, name pattern `al2023-ami-2023.*-x86_64`). See §7.
@@ -118,11 +119,12 @@ costs one extra shell command per demo.
 Role-scoped, not per-VM, so the Terraform stays readable and the diagram
 matches reality.
 
-| SG        | Attached to      | Ingress                                                                  | Egress             |
-| --------- | ---------------- | ------------------------------------------------------------------------ | ------------------ |
-| `sg-jump` | jump             | 22 from `var.admin_cidr`                                                 | all                |
-| `sg-lb`   | lb               | 80 from `0.0.0.0/0`; 22 from `sg-jump`                                   | all                |
-| `sg-app`  | app-vm1, app-vm2 | 8080 from `sg-lb`; 8080 from `sg-jump` (healthz curl); 22 from `sg-jump` | `10.0.0.0/16` only |
+| SG        | Attached to      | Ingress                                                                                                  | Egress             |
+| --------- | ---------------- | -------------------------------------------------------------------------------------------------------- | ------------------ |
+| `sg-jump` | jump             | 22 from `var.admin_cidr`                                                                                 | all                |
+| `sg-lb`   | lb               | 80 from `0.0.0.0/0`; 22 from `sg-jump`                                                                   | all                |
+| `sg-app`  | app-vm1, app-vm2 | 8080 from `sg-lb`; 8080 from `sg-jump` (healthz curl); 8080 from `sg-mon` (scrape); 22 from `sg-jump`    | `10.0.0.0/16` only |
+| `sg-mon`  | mon              | 22 from `sg-jump`; 9090 from `sg-jump` (Prometheus tunnel); 3000 from `sg-jump` (Grafana tunnel)         | all                |
 
 Points worth flagging because they're easy to miss:
 
@@ -134,6 +136,10 @@ Points worth flagging because they're easy to miss:
 - **Health-check path requires app-from-jump on 8080.** The deploy pipeline
   curls `app-vm1:8080/healthz` from the controller, so port 8080 from
   `sg-jump` to `sg-app` is required — not just 8080 from `sg-lb`.
+- **Scrape path requires app-from-mon on 8080.** Prometheus on `gitops-mon`
+  scrapes `app-vm{1,2}:8080/metrics`, so port 8080 from `sg-mon` to `sg-app`
+  is required. Mon itself is only reachable via SSH tunnel through jump
+  (ports 9090 / 3000), same posture as Jenkins.
 - **No Jenkins SG ingress for 8080.** Jenkins is reached only via SSH
   tunnel, so port 8080 stays bound to localhost on the jump host.
 
@@ -242,10 +248,11 @@ approximate):
 | ---------------------------- | -------- | --------------- |
 | `t3.small` (jump)            | 1        | ~$17            |
 | `t3.micro` (lb, app x2)      | 3        | ~$22            |
+| `t3.small` (mon)             | 1        | ~$17            |
 | EIPs (attached, no charge)   | 2        | $0              |
-| EBS gp3 30 GB per VM         | 4        | ~$10            |
+| EBS gp3 30 GB per VM         | 5        | ~$13            |
 | Data transfer (demo traffic) | minimal  | <$1             |
-| **Total**                    |          | **~$50/mo**     |
+| **Total**                    |          | **~$70/mo**     |
 
 Recommendation: `terraform destroy` between demo sessions. Re-provisioning
 takes minutes because AMI lookup is just an API call, no image build.
@@ -267,7 +274,7 @@ Called out so the gaps read as deliberate, not as oversights:
 - VPC Flow Logs, CloudTrail, GuardDuty
 - Internal patch mirror (app VMs install nothing at runtime; the Go binary is static)
 - Packer-baked golden AMI (the on-prem "golden template" pattern; deferred to v2)
-- Agent-based monitoring (Prometheus + node_exporter is the v2 add-on)
+- `node_exporter` on app VMs (CPU/mem panels would be cosmetic; the app's own `/metrics` already tells the canary story)
 - SSH cert authority / session recording on the jump host
 - Backup target on the Mgmt subnet
 - Secrets management (Ansible Vault is the natural v2 addition; v1 uses
