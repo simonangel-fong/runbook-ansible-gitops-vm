@@ -16,7 +16,6 @@
   ansible.builtin.file:
     path: /etc/nginx/sites-enabled/default
     state: absent
-  notify: Reload nginx
 
 - name: Template gitops upstream + server block
   ansible.builtin.template:
@@ -25,20 +24,16 @@
     owner: root
     group: root
     mode: "0644"
-  register: gitops_conf
 
 - name: Validate full nginx config tree
-  # Run separately because Ansible's validate: requires %s on the temp file,
-  # but our template is a snippet that only makes sense in the context of
-  # the full /etc/nginx/ tree. Running nginx -t against the live tree
-  # catches anything our snippet breaks.
+  # Always run — handlers can silently skip across re-runs when a previous
+  # run touched the file but failed to reload (e.g. validation error).
+  # Reload is graceful, so running it every time is cheap.
   ansible.builtin.command: nginx -t
   changed_when: false
-  when: gitops_conf.changed
-  notify: Reload nginx
 
-- name: Ensure nginx is enabled and running
+- name: Ensure nginx is enabled and reloaded
   ansible.builtin.systemd:
     name: nginx
     enabled: true
-    state: started
+    state: reloaded
