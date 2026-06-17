@@ -16,7 +16,7 @@ terraform -chdir=infra/ validate
 # terraform -chdir=infra/ apply tfplan
 
 terraform -chdir=infra/ apply -auto-approve
-
+terraform -chdir=infra/ destroy -auto-approve
 ```
 
 ---
