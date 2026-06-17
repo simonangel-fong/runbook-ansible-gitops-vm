@@ -38,9 +38,9 @@ systemctl status jenkins      # active (running)
 
 # forward jenkins UI
 terraform -chdir=infra/ output -raw jenkins_tunnel
-# ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.229.58
+# ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.182.125
 
-ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.229.58
+ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.182.125
 
 # init pwd
 sudo cat /var/lib/jenkins/secrets/initialAdminPassword

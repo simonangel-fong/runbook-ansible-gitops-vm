@@ -1,0 +1,10 @@
+---
+# Provisioning files are read at startup, so any change to a datasource or
+# dashboard provider file needs a service restart (not a reload). Dashboard
+# JSON itself is rescanned on the interval set in the provider file, so it
+# does NOT need to notify this handler — only the YAML configs do.
+
+- name: Restart grafana-server
+  ansible.builtin.systemd:
+    name: grafana-server
+    state: restarted

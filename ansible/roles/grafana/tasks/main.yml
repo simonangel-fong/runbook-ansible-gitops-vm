@@ -43,6 +43,42 @@
     state: present
     update_cache: true
 
+- name: Provision Prometheus datasource
+  ansible.builtin.template:
+    src: datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart grafana-server
+
+- name: Provision dashboard provider
+  ansible.builtin.template:
+    src: dashboard-provider.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/gitops-vm.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart grafana-server
+
+- name: Ensure dashboard directory exists
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0755"
+
+- name: Copy canary dashboard JSON
+  ansible.builtin.copy:
+    src: canary-dashboard.json
+    dest: /var/lib/grafana/dashboards/canary-dashboard.json
+    owner: grafana
+    group: grafana
+    mode: "0644"
+  # No notify — Grafana rescans this directory on the interval set in the
+  # dashboard provider config (10s).
+
 - name: Ensure grafana-server is enabled and running
   ansible.builtin.systemd:
     name: grafana-server

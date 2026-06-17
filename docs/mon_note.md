@@ -53,4 +53,9 @@ ansible-playbook mon.yml
 ssh mon 'systemctl is-active prometheus grafana-server'
 # active
 # active
+
+# prom UI
+ssh -i infra/keys/gitops-vm.pem -L 9090:10.0.90.20:9090 ubuntu@16.52.182.125
+
+# http://localhost:9090/targets
 ```

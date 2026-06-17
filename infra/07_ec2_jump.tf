@@ -56,7 +56,7 @@ resource "aws_vpc_security_group_egress_rule" "jump_egress_all" {
 # ##############################
 resource "aws_instance" "jump" {
   ami                    = data.aws_ami.ubuntu.id
-  instance_type          = "t3.small"
+  instance_type          = "t3.medium"
   subnet_id              = aws_subnet.mgmt.id
   private_ip             = local.ec2_jump_cidr
   vpc_security_group_ids = [aws_security_group.jump.id]

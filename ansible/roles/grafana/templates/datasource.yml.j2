@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+# Grafana datasource provisioning — Phase H5.
+#
+# Grafana reads /etc/grafana/provisioning/datasources/*.yml at startup and
+# upserts the listed datasources. Setting isDefault:true so the dashboard
+# JSON doesn't have to hard-code a UID.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://localhost:9090
+    isDefault: true
+    editable: false
