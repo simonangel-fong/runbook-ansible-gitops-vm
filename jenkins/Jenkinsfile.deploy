@@ -28,6 +28,13 @@ pipeline {
     timeout(time: 10, unit: 'MINUTES')
   }
 
+  // Phase C: poll the repo every ~2 minutes. Jittered (H) so multiple jobs
+  // wouldn't synchronize their polls. Webhooks would be faster but require
+  // Jenkins to be publicly reachable, which the SSH-tunnel-only design avoids.
+  triggers {
+    pollSCM('H/2 * * * *')
+  }
+
   environment {
     // Snap-installed Go is at /snap/bin/go; not always in jenkins's PATH.
     PATH = "/snap/bin:${env.PATH}"
