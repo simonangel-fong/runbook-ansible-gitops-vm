@@ -1,27 +1,34 @@
 ---
-# nginx.yml — Phase B: static 50/50 LB.
+# nginx.yml — Phase E LB weight setter.
 #
-# Phase E will re-invoke this playbook (or its role) with different
-# weight_canary values during the canary phase loop. For Phase B we hardcode
-# 50/50 and confirm round-robin via curl from the laptop.
+# Re-runs during each canary phase with a new weight_canary. The Jenkinsfile
+# passes the value via -e; this playbook templates the upstream block,
+# validates, and gracefully reloads nginx.
 #
-# Run from jump:
-#   cd ~/Project_GitOps_VM/ansible
-#   ansible-playbook nginx.yml
+# Defaults to 0/100 (no canary traffic) if invoked without args, which is the
+# safe "freeze stable" posture used after a successful promote.
+#
+# Run from jump (manual):
+#   ansible-playbook nginx.yml -e weight_canary=20
+#
+# Run from Jenkins (during canary phase loop):
+#   ansible-playbook nginx.yml -e weight_canary=${weight}
 
-- name: Configure nginx LB
+- name: Configure nginx LB weights
   hosts: lbs
   become: true
 
   vars:
-    weight_canary: 50
-    weight_stable: 50
+    weight_canary: 0
+    weight_stable: "{{ 100 - (weight_canary | int) }}"
 
   pre_tasks:
-    - name: Sanity-check weights sum to 100
+    - name: Sanity-check weight_canary is 0..100
       ansible.builtin.assert:
-        that: weight_canary + weight_stable == 100
-        fail_msg: "weight_canary ({{ weight_canary }}) + weight_stable ({{ weight_stable }}) must equal 100"
+        that:
+          - weight_canary | int >= 0
+          - weight_canary | int <= 100
+        fail_msg: "weight_canary ({{ weight_canary }}) must be 0..100"
 
   roles:
     - nginx
