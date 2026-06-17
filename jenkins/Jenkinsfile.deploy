@@ -1,23 +1,18 @@
-// jenkins/Jenkinsfile.deploy
+// jenkins/Jenkinsfile.deploy — Phase E (canary).
 //
-// One combined pipeline (Phase B / D simplification): builds the Go binary
-// and runs ansible-playbook deploy.yml to push it to every app VM. No canary
-// logic yet — Phase E adds that. No separate build pipeline yet — Phase D
-// splits this when app/ vs ansible/+deploy/ triggers diverge.
+// Reads deploy/release.yaml to determine target version + phase schedule.
+// Pre-deploys canary VM, then walks through weight phases with a health gate
+// at each step. Only promotes stable hosts after the 100% phase succeeds.
 //
-// Prereqs in the Jenkins UI (one-time):
-//   1. Manage Jenkins -> Credentials -> System -> Global -> Add credentials:
-//        Kind:     SSH Username with private key
-//        ID:       fleet-key
-//        Username: ubuntu
-//        Private key: paste contents of infra/keys/gitops-vm.pem
-//   2. Manage Jenkins -> Plugins -> Available:
-//        - SSH Agent Plugin
-//        - Pipeline: Multibranch (optional, for SCM polling)
-//   3. New Item -> Pipeline:
-//        - Pipeline -> Definition: "Pipeline script from SCM"
-//        - SCM: Git, URL https://github.com/simonangel-fong/Project_GitOps_VM.git
-//        - Script Path: jenkins/Jenkinsfile.deploy
+// Failure during any phase aborts the pipeline and reverts LB traffic to
+// stable-only (canary weight = 0). The canary VM is *left* on the new
+// binary — full revert (symlink swap back) is Phase F.
+//
+// Prereqs (one-time UI):
+//   - SSH Agent plugin
+//   - Pipeline Utility Steps plugin (for readYaml)
+//   - Credentials: SSH Username with private key, ID 'fleet-key',
+//     username 'ubuntu', key = contents of infra/keys/gitops-vm.pem
 
 pipeline {
   agent any
@@ -25,27 +20,40 @@ pipeline {
   options {
     timestamps()
     disableConcurrentBuilds()
-    timeout(time: 10, unit: 'MINUTES')
+    timeout(time: 30, unit: 'MINUTES')
   }
 
-  // Phase C: poll the repo every ~2 minutes. Jittered (H) so multiple jobs
-  // wouldn't synchronize their polls. Webhooks would be faster but require
-  // Jenkins to be publicly reachable, which the SSH-tunnel-only design avoids.
   triggers {
     pollSCM('H/2 * * * *')
   }
 
   environment {
-    // Snap-installed Go is at /snap/bin/go; not always in jenkins's PATH.
     PATH = "/snap/bin:${env.PATH}"
   }
 
   stages {
-    stage('Resolve version') {
+    stage('Read release.yaml') {
       steps {
         script {
-          env.APP_VERSION = readFile('app/VERSION').trim()
-          echo "Building gitops-api version: ${env.APP_VERSION}"
+          def release = readYaml file: 'deploy/release.yaml'
+          env.APP_VERSION       = release.version
+          env.CANARY_HOST       = release.canary_host
+          env.STABLE_HOSTS_CSV  = release.stable_hosts.join(',')
+          env.HC_INTERVAL       = release.health_check.interval_seconds.toString()
+          env.HC_THRESHOLD      = release.health_check.failure_threshold.toString()
+
+          // Stash the phases list as JSON so we can re-parse later in the
+          // canary loop stage (env vars must be strings).
+          writeFile file: '.phases.json', text: groovy.json.JsonOutput.toJson(release.phases)
+
+          echo """
+          === release.yaml parsed ===
+          version       : ${env.APP_VERSION}
+          canary_host   : ${env.CANARY_HOST}
+          stable_hosts  : ${env.STABLE_HOSTS_CSV}
+          phases        : ${release.phases.size()}
+          health_check  : every ${env.HC_INTERVAL}s, ${env.HC_THRESHOLD} consecutive failures aborts
+          """.stripIndent()
         }
       }
     }
@@ -64,18 +72,120 @@ pipeline {
       }
     }
 
-    stage('Deploy') {
+    stage('Pre-deploy: canary') {
       steps {
-        // sshagent loads the credential into a temporary ssh-agent for the
-        // duration of the closure; ansible picks it up automatically.
         sshagent(credentials: ['fleet-key']) {
           sh '''
             set -eu
+            echo "=== Deploying ${APP_VERSION} to canary host ${CANARY_HOST} ==="
             ansible-playbook \
               -i "${WORKSPACE}/ansible/inventory.ini" \
               "${WORKSPACE}/ansible/deploy.yml" \
+              --limit "${CANARY_HOST}" \
               -e binary_src="${WORKSPACE}/gitops-api" \
               -e app_version="${APP_VERSION}"
+          '''
+        }
+      }
+    }
+
+    stage('Canary phase loop') {
+      steps {
+        script {
+          def phases = readJSON file: '.phases.json'
+
+          phases.eachWithIndex { phase, i ->
+            def phaseNum = i + 1
+            def total    = phases.size()
+            def w        = phase.weight_canary
+            def hold     = phase.hold_seconds
+
+            stage("Phase ${phaseNum}/${total}: canary=${w}%") {
+              echo "=== Shifting LB weight: canary=${w}%, stable=${100 - w}% ==="
+              sshagent(credentials: ['fleet-key']) {
+                sh """
+                  ansible-playbook \
+                    -i \"\${WORKSPACE}/ansible/inventory.ini\" \
+                    \"\${WORKSPACE}/ansible/nginx.yml\" \
+                    -e weight_canary=${w}
+                """
+              }
+
+              if (hold > 0) {
+                echo "=== Health gate: ${hold}s, polling /healthz every ${env.HC_INTERVAL}s ==="
+                sshagent(credentials: ['fleet-key']) {
+                  // Gate: count consecutive 200s vs. consecutive failures.
+                  // Threshold failures aborts the pipeline.
+                  sh """
+                    set -eu
+                    DEADLINE=\$((\$(date +%s) + ${hold}))
+                    CONSEC_FAIL=0
+                    THRESHOLD=${env.HC_THRESHOLD}
+                    INTERVAL=${env.HC_INTERVAL}
+                    URL=http://${env.CANARY_HOST}:8080/healthz
+
+                    while [ \$(date +%s) -lt \$DEADLINE ]; do
+                      # Run curl FROM jump (the Jenkins agent) — the App SG
+                      # allows jump:* -> app:8080.
+                      ssh -o StrictHostKeyChecking=accept-new \
+                          -o UserKnownHostsFile=/dev/null \
+                          ubuntu@${env.CANARY_HOST} \
+                          \"curl -fsS --max-time 2 -o /dev/null -w '%{http_code}' http://localhost:8080/healthz\" \
+                        > .hc_status 2>/dev/null && STATUS=\$(cat .hc_status) || STATUS=000
+
+                      if [ \"\$STATUS\" = \"200\" ]; then
+                        echo \"[health] \$(date +%T) -> 200 OK (consec_fail=0)\"
+                        CONSEC_FAIL=0
+                      else
+                        CONSEC_FAIL=\$((CONSEC_FAIL + 1))
+                        echo \"[health] \$(date +%T) -> \$STATUS FAIL (consec_fail=\$CONSEC_FAIL/\$THRESHOLD)\"
+                        if [ \$CONSEC_FAIL -ge \$THRESHOLD ]; then
+                          echo \"[health] threshold reached — aborting\"
+                          exit 1
+                        fi
+                      fi
+
+                      sleep \$INTERVAL
+                    done
+                    echo \"=== Phase ${phaseNum} held cleanly for ${hold}s ===\"
+                  """
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Promote: stable hosts') {
+      steps {
+        sshagent(credentials: ['fleet-key']) {
+          sh '''
+            set -eu
+            echo "=== Promoting stable hosts: ${STABLE_HOSTS_CSV} ==="
+            # Convert "app-vm2,app-vm3" -> "app-vm2,app-vm3" (Ansible --limit
+            # accepts comma list directly).
+            ansible-playbook \
+              -i "${WORKSPACE}/ansible/inventory.ini" \
+              "${WORKSPACE}/ansible/deploy.yml" \
+              --limit "${STABLE_HOSTS_CSV}" \
+              -e binary_src="${WORKSPACE}/gitops-api" \
+              -e app_version="${APP_VERSION}"
+          '''
+        }
+      }
+    }
+
+    stage('Reset LB to balanced steady state') {
+      steps {
+        sshagent(credentials: ['fleet-key']) {
+          sh '''
+            set -eu
+            echo "=== All hosts on ${APP_VERSION}; resetting LB to 50/50 ==="
+            ansible-playbook \
+              -i "${WORKSPACE}/ansible/inventory.ini" \
+              "${WORKSPACE}/ansible/nginx.yml" \
+              -e weight_canary=50
           '''
         }
       }
@@ -84,10 +194,21 @@ pipeline {
 
   post {
     success {
-      echo "Deployed gitops-api ${env.APP_VERSION} to app-vm1 + app-vm2."
+      echo "[success] gitops-api ${env.APP_VERSION} promoted to all app VMs."
     }
     failure {
-      echo "Deploy failed — check the stage that aborted and the play recap."
+      echo "[failure] Aborted — reverting LB traffic to stable-only (canary weight = 0)."
+      // No sshagent here because we're in post — fleet-key credential
+      // re-binds inside the closure.
+      sshagent(credentials: ['fleet-key']) {
+        sh '''
+          ansible-playbook \
+            -i "${WORKSPACE}/ansible/inventory.ini" \
+            "${WORKSPACE}/ansible/nginx.yml" \
+            -e weight_canary=0 \
+          || echo "[failure] nginx revert also failed — manual fix needed"
+        '''
+      }
     }
   }
 }
