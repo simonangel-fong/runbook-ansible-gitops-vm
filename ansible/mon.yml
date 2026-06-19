@@ -1,18 +1,7 @@
 ---
-# mon.yml — Phase H of plan.md (monitoring stack on gitops-mon).
-#
-# Run from jump:
-#   cd /home/ubuntu/Project_GitOps_VM/ansible
-#   ansible mon -m ping             # sanity check
-#   ansible-playbook mon.yml        # install Prometheus + Grafana
-#
-# Verify (H3):
+# mon.yml
 #   ssh mon 'systemctl is-active prometheus grafana-server'
-#
-# This playbook is orthogonal to bootstrap.yml — re-runnable on its own
-# while iterating on scrape config (H4) and the dashboard (H5).
-
-- name: H3 — Install Prometheus + Grafana on mon
+- name: H3 - Install Prometheus + Grafana on mon
   hosts: mons
   become: true
   roles:

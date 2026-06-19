@@ -1,4 +1,4 @@
-bucket  = "your-tfstate-bucket-name"
+bucket  = "tfstate-bucket-name"
 key     = "gitops-vm/infra/terraform.tfstate"
 region  = "ca-central-1"
 profile = "gitops-vm"

@@ -1,8 +1,20 @@
+# locals.tf
 locals {
-  aws_region      = "ca-central-1"
-  project_name    = "gitops-vm"
-  github_owner    = "simonangel-fong"
-  github_repo     = "Project_GitOps_VM"
+  # #####################
+  # Project Metadata
+  # #####################
+  project_name = "gitops-vm"
+  github_owner = "simonangel-fong"
+  github_repo  = "Project_GitOps_VM"
+
+  # #####################
+  # AWS
+  # #####################
+  aws_region = "ca-central-1"
+
+  # #####################
+  # Network
+  # #####################
   subnet_vpc_cidr = "10.0.0.0/16"
 
   # DMZ subnet

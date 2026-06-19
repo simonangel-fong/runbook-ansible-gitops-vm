@@ -5,13 +5,13 @@
 | Status        | Draft v1                                       |
 | Author        | Simon Fong                                     |
 | Last updated  | 2026-06-15                                     |
-| Companion doc | [plan.md](plan.md) — overall technical design  |
+| Companion doc | [plan.md](plan.md) - overall technical design  |
 | Scope         | AWS VPC + EC2 layer only (the `infra/` module) |
 
 ## 1. Purpose and Positioning
 
 This document specifies the AWS layer that hosts the four VMs described in
-[plan.md](plan.md). The goal is not "EC2s in a VPC" — it is to make the AWS
+[plan.md](plan.md). The goal is not "EC2s in a VPC" - it is to make the AWS
 layout **look and behave like an on-prem VM environment**, because the whole
 portfolio project is a deliberate counterpart to a separate Kubernetes +
 ArgoCD project and targets reviewers from VM-shop industries (banks, telcos,
@@ -45,7 +45,7 @@ authority + session recording (Vault SSH / Teleport / tlog), backup target
 | Item   | Value           | Reason                                           |
 | ------ | --------------- | ------------------------------------------------ |
 | Region | `ca-central-1`  | Locked in project decisions; closest to author   |
-| AZ     | `ca-central-1a` | Single AZ — multi-AZ would be theatre for a demo |
+| AZ     | `ca-central-1a` | Single AZ - multi-AZ would be theatre for a demo |
 
 ## 4. VPC and Subnets
 
@@ -55,7 +55,7 @@ Single VPC, three subnets, two route tables.
 VPC  10.0.0.0/16   (ca-central-1a)
 
 ┌─ DMZ subnet           10.0.10.0/24   (public,  IGW route)
-│   └── gitops-lb       10.0.10.20     nginx — only internet-facing host
+│   └── gitops-lb       10.0.10.20     nginx - only internet-facing host
 │
 ├─ App subnet           10.0.20.0/24   (private, NO IGW route)
 │   ├── gitops-app-vm1  10.0.20.11     canary
@@ -73,7 +73,7 @@ Route tables:
 | `rt-private` | App subnet        | `10.0.0.0/16` local (only)             |
 
 The App subnet having literally no path to the internet is the on-prem
-signal — app servers in a real DC reach the outside world through an explicit
+signal - app servers in a real DC reach the outside world through an explicit
 proxy or an internal mirror, or not at all.
 
 CIDR convention: `.10` = DMZ, `.20` = App, `.99` = Mgmt. The `.99` for the
@@ -97,7 +97,7 @@ management network is an on-prem habit worth borrowing.
 - **EIPs on jump and LB only.** Jenkins URL and the public service entry
   point need stable addresses across reboots. App VMs have no public address
   at all.
-- **`t3.small` for jump** is the realistic floor — `t3.micro` (1 GB RAM)
+- **`t3.small` for jump** is the realistic floor - `t3.micro` (1 GB RAM)
   will OOM during Jenkins startup or a Go build. `t3.medium` if you want
   headroom.
 
@@ -106,8 +106,8 @@ management network is an on-prem habit worth borrowing.
 Plan locks Jenkins to the controller VM, and the on-prem analog backs it up:
 small shops put Jenkins, Ansible, and the SSH bastion on the same
 "utility server" on the management VLAN. A separate Jenkins VM would add
-cost and a fifth SG for no portfolio gain. The natural scale-out story —
-Jenkins controller + dedicated build agents — is called out as future work
+cost and a fifth SG for no portfolio gain. The natural scale-out story -
+Jenkins controller + dedicated build agents - is called out as future work
 in the README.
 
 Reaching Jenkins from the laptop is via SSH tunnel
@@ -135,7 +135,7 @@ Points worth flagging because they're easy to miss:
   everything else. Classic bastion pattern.
 - **Health-check path requires app-from-jump on 8080.** The deploy pipeline
   curls `app-vm1:8080/healthz` from the controller, so port 8080 from
-  `sg-jump` to `sg-app` is required — not just 8080 from `sg-lb`.
+  `sg-jump` to `sg-app` is required - not just 8080 from `sg-lb`.
 - **Scrape path requires app-from-mon on 8080.** Prometheus on `gitops-mon`
   scrapes `app-vm{1,2}:8080/metrics`, so port 8080 from `sg-mon` to `sg-app`
   is required. Mon itself is only reachable via SSH tunnel through jump
@@ -143,20 +143,20 @@ Points worth flagging because they're easy to miss:
 - **No Jenkins SG ingress for 8080.** Jenkins is reached only via SSH
   tunnel, so port 8080 stays bound to localhost on the jump host.
 
-## 7. Bootstrap — Stock AL2023 AMI
+## 7. Bootstrap - Stock AL2023 AMI
 
 VMs boot from the latest official Amazon Linux 2023 AMI, resolved at
 `terraform apply` time via a `data "aws_ami"` lookup. No image baking.
 
 **Why not Packer.** Packer was considered and rejected for v1. The honest
 audit: stock AL2023 already ships with everything this project needs at
-first boot — `python3` (for Ansible), `cloud-init` (for `user_data`),
+first boot - `python3` (for Ansible), `cloud-init` (for `user_data`),
 `chronyd` (time sync), sshd with sane defaults (no root login, no password
 auth). The only thing missing is the `appuser` account, and Ansible
 creates it in one task. A pre-baked AMI would have added a tool and a
 ~10-minute build step for one task's worth of savings.
 
-Crucially, the app itself is a **statically-linked Go binary** — there is
+Crucially, the app itself is a **statically-linked Go binary** - there is
 nothing to `dnf install` on the app VMs at any point. Ansible converges
 everything over SSH from the jump host. App VMs never need internet.
 
@@ -171,16 +171,16 @@ demonstrating once the v1 demo is working.
 3. Drop the jump's SSH public key into `appuser`'s `authorized_keys`
    (app + LB VMs only; not jump itself).
 
-Everything else — creating `appuser`, installing the app binary, writing
-systemd units, templating nginx config — is Ansible's job, run from jump
+Everything else - creating `appuser`, installing the app binary, writing
+systemd units, templating nginx config - is Ansible's job, run from jump
 over SSH.
 
 No application config, no package installs. The line between "image" and
 "convergence" is exactly where an on-prem team would draw it.
 
-## 8. DNS — `/etc/hosts` as Internal DNS
+## 8. DNS - `/etc/hosts` as Internal DNS
 
-No Route 53 private zone — overkill for four hosts. Terraform renders an
+No Route 53 private zone - overkill for four hosts. Terraform renders an
 `/etc/hosts` snippet via `local_file`, and the Ansible bootstrap role
 pushes it to every VM:
 
@@ -261,8 +261,8 @@ takes minutes because AMI lookup is just an API call, no image build.
 
 Settle before drafting Terraform:
 
-1. **`var.admin_cidr`** — your home IP/32 only, or a wider range?
-2. **Jenkins access** — confirm SSH tunnel only (recommended), or also
+1. **`var.admin_cidr`** - your home IP/32 only, or a wider range?
+2. **Jenkins access** - confirm SSH tunnel only (recommended), or also
    open 8080 on `sg-jump` to `var.admin_cidr`?
 
 ## 13. Out of Scope for v1

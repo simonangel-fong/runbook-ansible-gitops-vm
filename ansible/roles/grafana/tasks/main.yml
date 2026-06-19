@@ -1,13 +1,7 @@
 ---
-# roles/grafana/tasks/main.yml — H3
+# grafana/tasks/main.yml
 #
-# Installs Grafana OSS from the upstream apt repo (packages.grafana.com),
-# matching the pattern used for Jenkins on jump. Ubuntu's `grafana` package
-# lags upstream by a year; the dashboard provisioning UX assumes current.
-#
-# H5 adds the datasource template and dashboard JSON. For H3 we just want
-# the service up and reachable via SSH tunnel on :3000.
-
+# Installs Grafana OSS 
 - name: Install Grafana apt prerequisites
   ansible.builtin.apt:
     name:
@@ -76,8 +70,6 @@
     owner: grafana
     group: grafana
     mode: "0644"
-  # No notify — Grafana rescans this directory on the interval set in the
-  # dashboard provider config (10s).
 
 - name: Ensure grafana-server is enabled and running
   ansible.builtin.systemd:

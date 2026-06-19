@@ -166,7 +166,7 @@
   "time": { "from": "now-15m", "to": "now" },
   "timepicker": {},
   "timezone": "browser",
-  "title": "GitOps VM — Canary",
+  "title": "GitOps VM - Canary",
   "uid": "gitops-vm-canary",
   "version": 1,
   "weekStart": ""

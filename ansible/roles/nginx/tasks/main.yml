@@ -1,9 +1,5 @@
 ---
-# roles/nginx/tasks/main.yml
-#
-# Templates the upstream config + ensures nginx is serving. Idempotent:
-# template change triggers a config test then a graceful reload.
-
+# tasks/main.yml
 - name: Ensure app VM hostnames resolve via /etc/hosts on lb
   ansible.builtin.blockinfile:
     path: /etc/hosts
@@ -26,9 +22,6 @@
     mode: "0644"
 
 - name: Validate full nginx config tree
-  # Always run — handlers can silently skip across re-runs when a previous
-  # run touched the file but failed to reload (e.g. validation error).
-  # Reload is graceful, so running it every time is cheap.
   ansible.builtin.command: nginx -t
   changed_when: false
 

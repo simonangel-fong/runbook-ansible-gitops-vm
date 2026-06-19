@@ -16,7 +16,7 @@ func init() {
 }
 
 func TestRootHandler(t *testing.T) {
-	// Pin version so the assertion is deterministic.
+	// get version
 	original := version
 	version = "test-1.2.3"
 	t.Cleanup(func() { version = original })
@@ -72,7 +72,6 @@ func TestMetricsEndpoint(t *testing.T) {
 	r.GET("/healthz", healthzHandler)
 	r.GET("/metrics", metricsHandler)
 
-	// Drive one request through the middleware so the counter has something to report.
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 

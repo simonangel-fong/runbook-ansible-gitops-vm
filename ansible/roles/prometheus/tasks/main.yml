@@ -1,11 +1,5 @@
 ---
-# roles/prometheus/tasks/main.yml — H3
-#
-# Installs the Ubuntu apt-packaged Prometheus. The default config scrapes
-# only Prometheus itself, which is enough for H3's "is it up?" check. The
-# real scrape config (templated prometheus.yml.j2 for the app fleet) lands
-# in H4 and reloads via the role's handler.
-
+# tasks/main.yml
 - name: Install prometheus
   ansible.builtin.apt:
     name: prometheus

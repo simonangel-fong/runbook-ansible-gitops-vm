@@ -25,22 +25,30 @@ terraform -chdir=infra/ destroy -auto-approve
 
 ```sh
 terraform -chdir=infra/ output -raw ssh_jump
-# ssh -i infra/keys/gitops-vm.pem ec2-user@16.52.229.58
+# ssh -i infra/keys/gitops-vm.pem ubuntu@16.52.14.216
 
-sssh -i infra/keys/gitops-vm.pem ec2-user@16.52.229.58
+ssh -i infra/keys/gitops-vm.pem ubuntu@16.52.14.216
 ```
 
 ## Login jenkins
 
 ```sh
-# Confirm jenkins
-systemctl status jenkins      # active (running)
-
 # forward jenkins UI
 terraform -chdir=infra/ output -raw jenkins_tunnel
-# ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.182.125
+# ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.14.216
 
-ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.182.125
+# Confirm jenkins
+systemctl status jenkins      # active (running)
+# ● jenkins.service - Jenkins Continuous Integration Server
+#      Loaded: loaded (/usr/lib/systemd/system/jenkins.service; enabled; preset: enabled)
+#      Active: active (running) since Fri 2026-06-19 20:37:03 UTC; 53s ago
+#    Main PID: 8436 (java)
+#       Tasks: 48 (limit: 4520)
+#      Memory: 585.8M (peak: 592.0M)
+#         CPU: 21.337s
+#      CGroup: /system.slice/jenkins.service
+
+ssh -i infra/keys/gitops-vm.pem -L 8080:localhost:8080 ubuntu@16.52.14.216
 
 # init pwd
 sudo cat /var/lib/jenkins/secrets/initialAdminPassword
@@ -49,8 +57,13 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 ## Confirm Ansible
 
 ```sh
-cd ansible
+cd ~/Project_GitOps_VM/ansible
 ansible all -m ping -o
+# jump | SUCCESS => {"changed": false,"ping": "pong"}
+# lb | SUCCESS => {"changed": false,"ping": "pong"}
+# app-vm1 | SUCCESS => {"changed": false,"ping": "pong"}
+# mon | SUCCESS => {"changed": false,"ping": "pong"}
+# app-vm2 | SUCCESS => {"changed": false,"ping": "pong"}
 ```
 
 ---
@@ -75,14 +88,14 @@ ansible-playbook deploy.yml \
 ```sh
 ansible-playbook bootstrap.yml
 
-# PLAY [A2 — Connectivity check (every fleet host)] **************************************************************************
+# PLAY [A2 - Connectivity check (every fleet host)] **************************************************************************
 
 # TASK [Ping] ****************************************************************************************************************
 # ok: [lb]
 # ok: [app-vm1]
 # ok: [app-vm2]
 
-# PLAY [A3a — LB base setup] *************************************************************************************************
+# PLAY [A3a - LB base setup] *************************************************************************************************
 
 # TASK [Gathering Facts] *****************************************************************************************************
 # ok: [lb]
@@ -90,10 +103,10 @@ ansible-playbook bootstrap.yml
 # TASK [Install nginx] *******************************************************************************************************
 # changed: [lb]
 
-# TASK [Enable nginx (do not start — no upstream config yet)] ****************************************************************
+# TASK [Enable nginx (do not start - no upstream config yet)] ****************************************************************
 # ok: [lb]
 
-# PLAY [A3b — App VM base setup] *********************************************************************************************
+# PLAY [A3b - App VM base setup] *********************************************************************************************
 
 # TASK [Gathering Facts] *****************************************************************************************************
 # ok: [app-vm1]
@@ -153,10 +166,10 @@ ansible-playbook deploy.yml -e binary_src=/tmp/gitops-api -e app_version=$VERSIO
 
 # TASK [Flush handlers so smoke test runs against the new binary] ***********************************************************************************
 
-# TASK [Smoke test — GET /healthz] ******************************************************************************************************************
+# TASK [Smoke test - GET /healthz] ******************************************************************************************************************
 # ok: [app-vm1 -> localhost]
 
-# TASK [Smoke test — GET / reports the expected version] ********************************************************************************************
+# TASK [Smoke test - GET / reports the expected version] ********************************************************************************************
 # ok: [app-vm1 -> localhost]
 
 # TASK [Assert version matches] *********************************************************************************************************************
@@ -198,10 +211,10 @@ ansible-playbook deploy.yml -e binary_src=/tmp/gitops-api -e app_version=$VERSIO
 
 # TASK [Flush handlers so smoke test runs against the new binary] ***********************************************************************************
 
-# TASK [Smoke test — GET /healthz] ******************************************************************************************************************
+# TASK [Smoke test - GET /healthz] ******************************************************************************************************************
 # ok: [app-vm2 -> localhost]
 
-# TASK [Smoke test — GET / reports the expected version] ********************************************************************************************
+# TASK [Smoke test - GET / reports the expected version] ********************************************************************************************
 # ok: [app-vm2 -> localhost]
 
 # TASK [Assert version matches] *********************************************************************************************************************

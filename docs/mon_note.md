@@ -21,7 +21,7 @@ curl http://localhost:8080/metrics
 # # HELP gitops_api_healthy 1 if the instance reports healthy, 0 otherwise.
 # # TYPE gitops_api_healthy gauge
 # gitops_api_healthy{host="Simon-Laptop"} 1
-# # HELP gitops_api_info Build info — always 1, labels carry version and host.
+# # HELP gitops_api_info Build info - always 1, labels carry version and host.
 # # TYPE gitops_api_info gauge
 # gitops_api_info{host="Simon-Laptop",version="dev"} 1
 # # HELP gitops_api_request_duration_seconds HTTP request duration in seconds, labelled by matched route and host.

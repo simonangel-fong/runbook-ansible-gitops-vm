@@ -64,7 +64,7 @@ runcmd:
   # /etc/hosts fleet entries (idempotent)
   - bash -c 'grep -q "# gitops-vm fleet" /etc/hosts || { echo "# gitops-vm fleet" >> /etc/hosts; cat /etc/hosts.fleet >> /etc/hosts; }'
 
-  # Jenkins install — follows https://www.jenkins.io/doc/book/installing/linux/.
+  # Jenkins install - follows https://www.jenkins.io/doc/book/installing/linux/.
   # The keyring file path under /etc/apt/keyrings/ is the modern apt convention
   # (replaces the deprecated apt-key add).
   - install -d -m 0755 /etc/apt/keyrings
@@ -74,7 +74,7 @@ runcmd:
   - DEBIAN_FRONTEND=noninteractive apt-get install -y jenkins
   - systemctl enable --now jenkins
 
-  # Go via snap — ubuntu 24.04's golang-go is 1.22, too old for go 1.25 modules.
+  # Go via snap - ubuntu 24.04's golang-go is 1.22, too old for go 1.25 modules.
   # snap install go --classic gets the current stable release direct from upstream.
   - snap install go --classic
 

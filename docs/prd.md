@@ -5,7 +5,7 @@
 | Status        | Draft v1                              |
 | Author        | Simon Fong                            |
 | Last updated  | 2026-06-15                            |
-| Companion doc | [plan.md](plan.md) — technical design |
+| Companion doc | [plan.md](plan.md) - technical design |
 | Project type  | Portfolio / personal project          |
 
 ## 1. Summary
@@ -23,7 +23,7 @@ account) reproduce end-to-end in under 30 minutes.
 ## 2. Background and Motivation
 
 Most GitOps content online targets Kubernetes + ArgoCD / Flux. Real industries
-— banks, insurers, telcos, government — still run substantial workloads on
+- banks, insurers, telcos, government - still run substantial workloads on
 plain VMs and are unlikely to migrate soon. Roles in those environments expect
 candidates who can articulate GitOps principles **without** assuming a
 container orchestrator.
@@ -41,7 +41,7 @@ covers the VM path so the portfolio shows both delivery models.
 | G1  | Demonstrate the four GitOps tenets (SoT, declarative state, automated reconciliation, observability of state) without using Kubernetes. |
 | G2  | Show a working canary rollout (20% → 50% → 100%) driven by nginx weight changes.                                                        |
 | G3  | Show automatic rollback when a release fails its health check during canary.                                                            |
-| G4  | Make the entire stack reproducible from `terraform apply` + `git push` — no AWS console clicks for deployment.                          |
+| G4  | Make the entire stack reproducible from `terraform apply` + `git push` - no AWS console clicks for deployment.                          |
 | G5  | Be presentable as a portfolio artifact: clean README, topology diagram, recorded demo.                                                  |
 
 ### 3.2 Secondary goals (nice-to-have, v1 if time allows)
@@ -56,9 +56,9 @@ covers the VM path so the portfolio shows both delivery models.
   HA Jenkins, no multi-region.
 - Not a Docker / container project. The application is a static Go binary by
   intentional design (see plan.md "Context and Positioning").
-- Not a benchmarking project — no load testing, no performance targets beyond
+- Not a benchmarking project - no load testing, no performance targets beyond
   "responds to requests."
-- Not a security project — no TLS, no secrets manager, no audit logging.
+- Not a security project - no TLS, no secrets manager, no audit logging.
 
 ## 4. Target Audience
 
@@ -73,20 +73,20 @@ covers the VM path so the portfolio shows both delivery models.
 Written from the perspective of an operator using the system (the role the
 project is demonstrating competence in).
 
-- **U1 — Release a new version.** As an operator, I edit `app/VERSION`, push,
+- **U1 - Release a new version.** As an operator, I edit `app/VERSION`, push,
   wait for the build pipeline, then edit `deploy/release.yaml` and push, so
   that the new version rolls out progressively without me touching any VM.
-- **U2 — Observe rollout state.** As an operator, I curl the LB and see the
+- **U2 - Observe rollout state.** As an operator, I curl the LB and see the
   `version` field shift as the canary weight increases, so that I can verify
   the rollout is progressing.
-- **U3 — Survive a bad release.** As an operator, I push a release that fails
+- **U3 - Survive a bad release.** As an operator, I push a release that fails
   `/healthz`, and the system reverts traffic and the canary binary back to the
   prior version without my intervention, so that user impact is limited to
   the canary slice during the failure window.
-- **U4 — Reproduce the environment.** As a reviewer, I clone the repo, run
+- **U4 - Reproduce the environment.** As a reviewer, I clone the repo, run
   `terraform apply`, and have a working four-VM environment, so that I can
   evaluate the project without taking the author's word for it.
-- **U5 — Understand the design.** As a reviewer, I read the README and
+- **U5 - Understand the design.** As a reviewer, I read the README and
   `docs/plan.md` and understand the topology and the rollback flow within ten
   minutes, so that I can judge the author's design clarity.
 
@@ -101,7 +101,7 @@ project is demonstrating competence in).
 | FR-3 | The `version` value is baked into the binary at build time via `-ldflags`, sourced from `app/VERSION`.                       |
 | FR-4 | A failure-injection switch is baked into the binary at build time via `-ldflags -X main.healthy=false`. When the flag is not `"true"`, `/healthz` returns `500`. Default `"true"`. Toggling the flag = a code/release commit, preserving the GitOps story. |
 | FR-5 | The service binds to `:8080`, runs as a non-root `appuser` under `systemd`, and shuts down gracefully on `SIGTERM` (drains in-flight requests within 10s before exiting) so `systemctl restart` during a canary phase does not drop connections. |
-| FR-5a | Request logging is provided by `gin.Default()`'s default logger — one structured line per request to stdout, captured by `journalctl`. Lets the demo show per-VM traffic shifts during canary phases. |
+| FR-5a | Request logging is provided by `gin.Default()`'s default logger - one structured line per request to stdout, captured by `journalctl`. Lets the demo show per-VM traffic shifts during canary phases. |
 
 ### 6.2 Infrastructure
 
@@ -109,7 +109,7 @@ project is demonstrating competence in).
 | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | FR-6 | Terraform under `infra/` provisions four EC2 instances in **region `ca-central-1`**, AMI **Amazon Linux 2023**: 1 controller (`t3.small`), 1 LB (`t3.micro`), 2 app (`t3.micro`). |
 | FR-7 | Terraform creates a security group permitting: SSH from controller to LB+app, HTTP :80 from internet to LB, HTTP :8080 from LB to app VMs only. |
-| FR-8 | An Ansible bootstrap playbook installs nginx on the LB (via `dnf`), installs Jenkins on the controller (via the Jenkins yum repo + `dnf`, running as a `systemd` service — **not** in Docker), and creates `appuser` and `/opt/app/` on app VMs. Idempotent. |
+| FR-8 | An Ansible bootstrap playbook installs nginx on the LB (via `dnf`), installs Jenkins on the controller (via the Jenkins yum repo + `dnf`, running as a `systemd` service - **not** in Docker), and creates `appuser` and `/opt/app/` on app VMs. Idempotent. |
 | FR-8a | An Ansible static inventory `ansible/inventory.ini` lists the four hosts with hardcoded private IPs and AL2023's default user (`ec2-user`). Regenerated by hand after any Terraform reprovision. |
 
 ### 6.3 Source of Truth
@@ -151,7 +151,7 @@ Repository layout is fixed as specified in [plan.md §Repository Layout](plan.md
 | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | NFR-1 | A canary rollout MUST NOT drop in-flight connections. Two mechanisms: (a) nginx weight changes use `nginx -s reload`, not restart; (b) the Go service handles `SIGTERM` with `http.Server.Shutdown` and a 10s drain timeout (see FR-5). |
 | NFR-2 | The canary symlink swap MUST be atomic on the target VM. (Achieved by `ln -sfn` → `mv`, not `rm` + `ln`.)                                                        |
-| NFR-3 | All Ansible playbooks MUST be idempotent — re-running with no Git change MUST produce no VM changes.                                                             |
+| NFR-3 | All Ansible playbooks MUST be idempotent - re-running with no Git change MUST produce no VM changes.                                                             |
 | NFR-4 | A reviewer with an AWS account SHOULD be able to go from `git clone` to a working LB URL in under 30 minutes, following only the README.                         |
 | NFR-5 | Total monthly AWS cost in the default config SHOULD stay within the EC2 free tier where possible; absolute ceiling \$15 USD/month when all four VMs are running. |
 | NFR-6 | The end-to-end deploy pipeline (commit → 100% promoted) SHOULD complete in under 5 minutes on the happy path so the demo is watchable.                           |
@@ -196,7 +196,7 @@ demonstrable to avoid a big-bang integration.
 | `curl /healthz` as the sole signal misses real-traffic 5xx      | High       | Low    | Acknowledged explicitly in README as a v1 trade-off; Prometheus listed as v2 future work. |
 | Reviewer cannot run AWS but wants to evaluate                   | High       | Low    | Recorded demo + clear code structure so static review is meaningful.                      |
 | Ansible playbook non-idempotency surfaces during demo           | Medium     | Medium | NFR-3 + an explicit "re-run with no change" check in AC-7.                                |
-| Scope creep toward adding Docker / K8s / Prometheus mid-project | Medium     | High   | "Non-goals" and "out of scope" sections are load-bearing — revisit before any addition.   |
+| Scope creep toward adding Docker / K8s / Prometheus mid-project | Medium     | High   | "Non-goals" and "out of scope" sections are load-bearing - revisit before any addition.   |
 | Terraform reprovision changes private IPs, breaking static inventory | Medium | Medium | Document "after reprovision, regenerate `inventory.ini` from Terraform output" in the runbook. |
 
 ## 11. Resolved Decisions
@@ -225,12 +225,12 @@ Listed here so reviewers see that v1 omissions are deliberate, not unknown.
   rollouts.
 - **TLS on the LB** via Let's Encrypt / cert-manager-equivalent.
 - **Secrets management** via Ansible Vault or AWS SSM Parameter Store.
-- **Webhook-based pipeline triggers** instead of SCM polling (v1 chose polling — see §11 decision 4).
+- **Webhook-based pipeline triggers** instead of SCM polling (v1 chose polling - see §11 decision 4).
 - **Blue/green** rollout as an alternative to canary, selectable per release.
-- **Dynamic Ansible inventory** keyed off EC2 tags (v1 chose static inventory — see §11 decision 2).
+- **Dynamic Ansible inventory** keyed off EC2 tags (v1 chose static inventory - see §11 decision 2).
 - **Slack / GitHub-status notifications** on rollout success and rollback.
 
 ## 13. References
 
-- [docs/plan.md](plan.md) — full technical design (topology, repo layout, pipeline mechanics, systemd unit, demo script).
+- [docs/plan.md](plan.md) - full technical design (topology, repo layout, pipeline mechanics, systemd unit, demo script).
 - Companion portfolio project: GitOps on Kubernetes with ArgoCD (separate repo).

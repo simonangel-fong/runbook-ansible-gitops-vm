@@ -1,43 +1,23 @@
-# release.yaml — declarative source of truth for the running app.
-#
-# Editing this file (and pushing) is how an operator declares intent.
-# Jenkins reads it, reconciles the fleet, and exits with the result.
-#
+# release.yaml: declarative source of truth for the running app.
 # Schema:
-#   version           — the build to deploy. Must match app/VERSION at the
-#                       time of build (Jenkins re-builds from source).
-#   phases            — ordered list of canary weight steps.
-#     weight_canary   — percentage of LB traffic to send to canary_host
-#                       (0-100). The complement goes to stable_hosts.
-#     hold_seconds    — how long to keep the weight before advancing.
-#                       Demo uses short holds; production would use 60-300.
-#   canary_host       — inventory name of the canary VM.
-#   stable_hosts      — list of inventory names that get promoted only after
-#                       a successful 100% canary phase.
-#   health_check      — Jenkins polls http://{canary_host}:8080/healthz
-#                       every interval_seconds during each phase.
+#   version           - the build to deploy. Must match app/VERSION at the time of build (Jenkins re-builds from source).
+#   phases            - ordered list of canary weight steps.
+#     weight_canary   - percentage of LB traffic to send to canary_host (0-100). The complement goes to stable_hosts.
+#     hold_seconds    - how long to keep the weight before advancing.
+#   canary_host       - inventory name of the canary VM.
+#   stable_hosts      - list of inventory names that get promoted only after a successful 100% canary phase.
+#   health_check      - Jenkins polls http://{canary_host}:8080/healthz every interval_seconds during each phase.
 #                       failure_threshold consecutive non-200s aborts.
 
 version: "0.3.1"
 
-# Whether the binary should be healthy at runtime.
-# Default: true (normal release).
-#
-# Demo affordance — set to false to bake `-X main.healthy=false` into the
-# binary so /healthz returns 500. The canary phase gate then trips during
-# Phase 1 and the pipeline's post { failure } drains LB traffic from the
-# canary. The canary VM is *left* on the broken binary — full symlink-back
-# revert comes in Phase F.
-#
-# Polarity is "is this build expected to be healthy?" so the safe default
-# (true) reads naturally and any false is a deliberate failure demo.
-build_healthy: true
+build_healthy: true # control health check
 
 phases:
   - weight_canary: 20
-    hold_seconds: 15
+    hold_seconds: 60
   - weight_canary: 50
-    hold_seconds: 15
+    hold_seconds: 60
   - weight_canary: 100
     hold_seconds: 0
 

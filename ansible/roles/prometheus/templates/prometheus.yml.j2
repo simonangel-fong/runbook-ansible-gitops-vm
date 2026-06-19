@@ -1,11 +1,5 @@
 # {{ ansible_managed }}
-# Prometheus scrape config — Phase H4.
-#
-# 5s scrape_interval per mon_plan.md §13 risk 3: canary phases hold for ~15s,
-# so a 15s interval would give one data point per phase. 5s gives three.
-#
-# Targets are static — the fleet is 2 app VMs and not growing. Dynamic SD
-# (file_sd / ec2_sd) is overkill for this scope.
+# Prometheus scrape config 
 
 global:
   scrape_interval: 5s
@@ -14,8 +8,7 @@ global:
     cluster: gitops-vm
 
 scrape_configs:
-  # Prometheus scrapes itself — useful sanity check + the default packaged
-  # behaviour, kept so the prometheus_* metrics are still available.
+  # Prometheus scrapes itself 
   - job_name: prometheus
     static_configs:
       - targets:
@@ -23,11 +16,6 @@ scrape_configs:
 
   # The gitops-api fleet. host label is the VM name so PromQL queries that
   # distinguish canary vs stable can use it directly.
-  #
-  # The app emits its own `host` label (os.Hostname() — the noisy EC2
-  # hostname like ip-10-0-20-11). We strip it via metric_relabel_configs
-  # so the friendly target-set `host` (app-vm1 / app-vm2) is what shows up
-  # in the dashboards.
   - job_name: gitops-api
     metrics_path: /metrics
     static_configs:
@@ -42,9 +30,5 @@ scrape_configs:
           host: app-vm2
           role: stable
     metric_relabel_configs:
-      # The app emits a `host` label. With honor_labels:false (default),
-      # Prometheus keeps the target's `host` value and renames the
-      # app's to `exported_host`. We drop that so dashboards only see one
-      # `host` label per series, holding the friendly app-vm1 / app-vm2.
       - regex: "^exported_host$"
         action: labeldrop

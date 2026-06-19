@@ -1,7 +1,4 @@
 ---
-# Placeholder handler — fires when H4 templates prometheus.yml. Kept here
-# so the role layout matches mon_plan.md §7 and H4 only adds a notify line.
-
 - name: Reload prometheus
   ansible.builtin.systemd:
     name: prometheus

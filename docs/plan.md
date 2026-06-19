@@ -17,9 +17,9 @@ team might care about:
 | GitOps on VMs | EC2 VMs  | Jenkins + Ansible (push) | Go binary + systemd |
 
 No Docker is used for the application. The artifact is a static Go binary
-managed by `systemd` — the canonical shape for VM-native deployment.
+managed by `systemd` - the canonical shape for VM-native deployment.
 
-## GitOps Tenets — How They Map Here
+## GitOps Tenets - How They Map Here
 
 1. **Single Source of Truth.** All app code (`app/`) and all deployment
    configuration (`ansible/`, `deploy/release.yaml`) live in this monorepo on
@@ -35,7 +35,7 @@ managed by `systemd` — the canonical shape for VM-native deployment.
 5. **Auto-Rollback.** A failed health check during any phase reverts nginx
    weights and the symlinked binary on the canary VM to the prior version.
 
-## Topology — 4 EC2 instances
+## Topology - 4 EC2 instances
 
 ```
               ┌─────────────────────┐
@@ -56,14 +56,14 @@ managed by `systemd` — the canonical shape for VM-native deployment.
         │ HTTP from clients
 ```
 
-- **Controller VM** (`t3.small`): Jenkins (Docker or native — operational
+- **Controller VM** (`t3.small`): Jenkins (Docker or native - operational
   choice, not part of the deploy story), Ansible, SSH keys to the other VMs.
 - **LB VM** (`t3.micro`): nginx with weighted upstream block. Public-facing.
 - **App VM1, App VM2** (`t3.micro` each): one Go binary per VM, run as
   `systemd` service `gitops-api.service`. During canary, **App VM1 is the
   canary** and App VM2 stays on the stable version.
 
-Provisioning is via Terraform (`infra/` directory) — included because
+Provisioning is via Terraform (`infra/` directory) - included because
 "clickops in the AWS console" undermines the source-of-truth story.
 
 ## Repository Layout
@@ -105,7 +105,7 @@ Minimal, but structured so canary state is observable from outside:
 
 The version string is read at build time from `app/VERSION` via Go `ldflags`
 (`-X main.version=$(cat VERSION)`). This makes the version visible at runtime
-without any config-file lookup — the binary is the source of its own truth.
+without any config-file lookup - the binary is the source of its own truth.
 
 `/healthz` includes a hidden failure switch baked in at build time via
 `-ldflags "-X main.healthy=false"` so a broken release can be simulated by
@@ -137,7 +137,7 @@ weights) is how an operator declares intent. Jenkins reconciles.
 
 ## Two Pipelines
 
-### Pipeline 1 — Build (`Jenkinsfile.build`)
+### Pipeline 1 - Build (`Jenkinsfile.build`)
 
 Triggered by SCM polling on changes under `app/` on `main`.
 
@@ -149,7 +149,7 @@ Triggered by SCM polling on changes under `app/` on `main`.
    controller VM is fine, e.g. `/var/lib/jenkins/artifacts/gitops-api-$VERSION`).
 5. **Does not deploy.** The build pipeline only produces the artifact.
 
-### Pipeline 2 — Deploy (`Jenkinsfile.deploy`)
+### Pipeline 2 - Deploy (`Jenkinsfile.deploy`)
 
 Triggered by SCM polling on changes under `ansible/` or `deploy/` on `main`.
 
@@ -158,7 +158,7 @@ Triggered by SCM polling on changes under `ansible/` or `deploy/` on `main`.
    with a clear "build pipeline has not produced this version" message.
 3. **Snapshot current state** for rollback: record the currently-deployed
    version on canary host and current nginx weights.
-4. **Pre-deploy canary**: `ansible-playbook deploy.yml --limit canary_host` —
+4. **Pre-deploy canary**: `ansible-playbook deploy.yml --limit canary_host` -
    copies the new binary to `/opt/app/releases/$VERSION/`, atomically updates
    the `current` symlink, restarts `gitops-api.service`.
 5. **Phase loop** (for each phase in `release.yaml`):
@@ -177,14 +177,14 @@ Triggered by SCM polling on changes under `ansible/` or `deploy/` on `main`.
 
 Triggered by deploy pipeline on health-check failure.
 
-1. Re-template nginx with `weight_canary: 0`, reload — stops sending traffic
+1. Re-template nginx with `weight_canary: 0`, reload - stops sending traffic
    to canary immediately.
 2. On canary host: swap the `current` symlink back to the prior version's
    directory, restart `gitops-api.service`.
 3. Mark the Jenkins build as failed; exit non-zero.
 4. (Optional v2: post to Slack / GitHub commit status.)
 
-## Health Check / Rollback Signal — Jenkins-driven `curl`
+## Health Check / Rollback Signal - Jenkins-driven `curl`
 
 No Prometheus in v1. The deploy pipeline itself runs the health probe via
 `curl` from the controller VM against `app-vm1:8080/healthz` during each
@@ -198,7 +198,7 @@ This is intentionally simple. Trade-offs to acknowledge in the README:
   traffic. A v2 with Prometheus + a 5xx-rate query is a natural follow-up
   and worth mentioning in the README as "future work."
 
-## nginx Weighted Upstream — How Traffic Splits
+## nginx Weighted Upstream - How Traffic Splits
 
 `ansible/roles/nginx/templates/upstream.conf.j2`:
 
@@ -220,12 +220,12 @@ server {
 on each phase change and runs `nginx -s reload` (graceful, no dropped
 connections).
 
-## systemd Unit — `gitops-api.service`
+## systemd Unit - `gitops-api.service`
 
 Stored as `ansible/roles/app/templates/gitops-api.service.j2`. Key properties
 worth showing off:
 
-- `ExecStart=/opt/app/current/gitops-api` — points at the symlink, so an
+- `ExecStart=/opt/app/current/gitops-api` - points at the symlink, so an
   atomic symlink swap + `systemctl restart` is the entire deploy step on the
   VM.
 - `Restart=on-failure`, `RestartSec=2s`.
@@ -269,14 +269,14 @@ portfolio value.
 
 A suggested implementation order so you have a working slice early:
 
-1. **Phase A — App and infra skeleton.** Go API with `/` and `/healthz`,
+1. **Phase A - App and infra skeleton.** Go API with `/` and `/healthz`,
    `VERSION` file, `ldflags` build. Terraform for 4 EC2s. Bootstrap Ansible
    playbook. Manual `scp` + `systemctl` to confirm the binary runs on an
    app VM. _Output: API reachable on an app VM._
 
    **Sub-phases (this is where Ansible enters the picture):**
 
-   - **A1 — Jump becomes the controller.** `user_data` on the jump instance
+   - **A1 - Jump becomes the controller.** `user_data` on the jump instance
      installs `git`, `ansible-core`, `java-17`, and `jenkins` (native package,
      not Docker). Same script clones this repo to `/opt/gitops-vm/` and
      drops the fleet private key (`gitops-vm.pem`) into `~ec2-user/.ssh/`
@@ -284,7 +284,7 @@ A suggested implementation order so you have a working slice early:
      to jump, `which ansible` works, `systemctl status jenkins` is
      active._
 
-   - **A2 — Inventory rendering from Terraform.** Terraform writes
+   - **A2 - Inventory rendering from Terraform.** Terraform writes
      `ansible/inventory.ini` via `local_file` using the live private IPs
      of lb / app-vm1 / app-vm2. This closes the Terraform→Ansible loop
      without dynamic inventory (deferred to v2 per
@@ -292,7 +292,7 @@ A suggested implementation order so you have a working slice early:
      ansible/inventory.ini all -m ping` from jump succeeds against all
      three fleet hosts._
 
-   - **A3 — Bootstrap playbook.** `ansible/bootstrap.yml` runs once from
+   - **A3 - Bootstrap playbook.** `ansible/bootstrap.yml` runs once from
      jump against the fleet: creates the `appuser` account, scaffolds
      `/opt/app/{releases,current}/` on app VMs, writes the systemd unit
      stub, installs `nginx` on lb. _Output: `appuser` exists on all
@@ -301,7 +301,7 @@ A suggested implementation order so you have a working slice early:
    ### Why Ansible runs on jump, not on the laptop
 
    Production ops shops don't run `ansible-playbook` from individual
-   laptops — versions drift between operators, the audit trail lives in
+   laptops - versions drift between operators, the audit trail lives in
    shell history, secrets sprawl everywhere. The canonical pattern is a
    **dedicated control node** that hosts Ansible, the inventory, and the
    CI/CD runner. All convergence flows from that one place. This project
@@ -318,37 +318,37 @@ A suggested implementation order so you have a working slice early:
    Ansible can't install itself on jump before jump exists. `user_data`
    is the one piece that has to be imperative (cloud-init script).
    Everything else from A2 onward is Ansible. This is exactly the
-   "golden template" boundary [aws_design.md §7](aws_design.md) — the
+   "golden template" boundary [aws_design.md §7](aws_design.md) - the
    v2 Packer path will bake `user_data`'s install steps into an AMI,
    shrinking `user_data` to ~3 lines (clone repo, start Jenkins).
-2. **Phase B — Static nginx LB.** nginx upstream with hardcoded 50/50 split.
+2. **Phase B - Static nginx LB.** nginx upstream with hardcoded 50/50 split.
    Confirm round-robin via `curl` and the `version` field. _Output: LB
    serves both VMs._
-3. **Phase C — Jenkins build pipeline.** `Jenkinsfile.build` with polling on
+3. **Phase C - Jenkins build pipeline.** `Jenkinsfile.build` with polling on
    `app/`. _Output: commits to `app/` produce versioned artifacts._
-4. **Phase D — Jenkins deploy pipeline (no canary yet).** `Jenkinsfile.deploy`
+4. **Phase D - Jenkins deploy pipeline (no canary yet).** `Jenkinsfile.deploy`
    that runs `deploy.yml` to push the artifact to both VMs in lockstep.
    _Output: end-to-end GitOps for a non-progressive rollout._
-5. **Phase E — Canary phases + health check.** Add the phase loop, weight
+5. **Phase E - Canary phases + health check.** Add the phase loop, weight
    templating, and the `curl /healthz` health gate. _Output: progressive
    rollout works on the happy path._
-6. **Phase F — Rollback.** `rollback.yml`, snapshot-before-deploy logic,
+6. **Phase F - Rollback.** `rollback.yml`, snapshot-before-deploy logic,
    the failing-binary demo path. _Output: rollback demo works._
-7. **Phase G — Polish.** README with the topology diagram, demo recording,
+7. **Phase G - Polish.** README with the topology diagram, demo recording,
    "future work" section (Prometheus-based error-rate signal, blue/green
    alternative, Slack notifications).
 
-## Explicitly Out of Scope (v1) — and Why
+## Explicitly Out of Scope (v1) - and Why
 
 Calling these out in the README signals that the omissions are deliberate,
 not gaps.
 
-- **Docker / containers** — defeats the purpose of a VM-deployment portfolio.
-- **Prometheus / Grafana** — kept out for simplicity; noted as v2.
-- **TLS on the LB** — not relevant to the GitOps story; would add cert-manager
+- **Docker / containers** - defeats the purpose of a VM-deployment portfolio.
+- **Prometheus / Grafana** - kept out for simplicity; noted as v2.
+- **TLS on the LB** - not relevant to the GitOps story; would add cert-manager
   noise.
-- **Multi-region / HA Jenkins** — controller is a single VM; this is a demo.
-- **Secrets management (Vault, SSM)** — Ansible Vault is the natural
+- **Multi-region / HA Jenkins** - controller is a single VM; this is a demo.
+- **Secrets management (Vault, SSM)** - Ansible Vault is the natural
   v2 addition; v1 uses SSH keys provisioned by Terraform.
-- **Database / stateful service** — the API is stateless on purpose so the
+- **Database / stateful service** - the API is stateless on purpose so the
   canary story stays clean.

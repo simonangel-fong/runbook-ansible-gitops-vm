@@ -28,7 +28,7 @@ func main() {
 	// GET /healthz
 	r.GET("/healthz", healthzHandler)
 
-	// GET /metrics — prometheus scrape endpoint
+	// GET /metrics - prometheus scrape endpoint
 	r.GET("/metrics", metricsHandler)
 
 	srv := &http.Server{
@@ -49,7 +49,7 @@ func main() {
 	<-quit
 	log.Println("shutting down")
 
-	// 10s drain — in-flight requests complete; new ones rejected.
+	// 10s drain
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

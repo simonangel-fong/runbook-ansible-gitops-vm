@@ -1,6 +1,6 @@
 # API Build Notes
 
-## Phase 1 — Scaffold and hello world
+## Phase 1 - Scaffold and hello world
 
 **Goal.** Project compiles and serves a hardcoded response on `:8080`.
 
@@ -18,7 +18,7 @@ go mod init gitops-vm
 # 3. Add gin dependency
 go get github.com/gin-gonic/gin
 
-# 4. Write VERSION (placeholder — not wired via -ldflags until Phase 3)
+# 4. Write VERSION (placeholder - not wired via -ldflags until Phase 3)
 tee VERSION<<EOF
 "0.1.0"
 EOF
@@ -169,7 +169,7 @@ curl -i http://localhost:8080/metrics
 # # HELP gitops_api_healthy 1 if the instance reports healthy, 0 otherwise.
 # # TYPE gitops_api_healthy gauge
 # gitops_api_healthy{host="Simon-Laptop"} 1
-# # HELP gitops_api_info Build info — always 1, labels carry version and host.
+# # HELP gitops_api_info Build info - always 1, labels carry version and host.
 # # TYPE gitops_api_info gauge
 # gitops_api_info{host="Simon-Laptop",version="dev"} 1
 # # HELP gitops_api_request_duration_seconds HTTP request duration in seconds, labelled by matched route and host.
@@ -272,7 +272,7 @@ Ctrl+C the server.
 
 ---
 
-**Check B — built binary picks up VERSION:**
+**Check B - built binary picks up VERSION:**
 
 ```sh
 cd app
@@ -312,7 +312,7 @@ Default build (`healthy=true`) returns `200 ok`. `/` is unaffected.
 Notes on the design:
 
 - `-ldflags -X` can only set string vars, so `healthy` is a **string**, not a bool.
-- The flag is a _test hook_, not a feature — no debug endpoint exposes its value.
+- The flag is a _test hook_, not a feature - no debug endpoint exposes its value.
 - Default is `"true"` (healthy) so the natural state needs no override; only
   the rollback-demo build sets `healthy=false`.
 
@@ -488,7 +488,7 @@ func main() {
 	<-quit
 	log.Println("shutting down")
 
-	// 10s drain — in-flight requests complete; new ones rejected.
+	// 10s drain - in-flight requests complete; new ones rejected.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
@@ -511,7 +511,7 @@ cd app
 go run .
 ```
 
-Terminal B — send SIGTERM:
+Terminal B - send SIGTERM:
 
 ```sh
 # Linux / Mac / Git Bash on Windows
@@ -527,14 +527,14 @@ server exited cleanly
 
 and exit within 10s.
 
-**Check B — new connections refused after SIGTERM:**
+**Check B - new connections refused after SIGTERM:**
 
 ```sh
 curl http://localhost:8080/healthz
 # curl: (7) Failed to connect to localhost port 8080: Connection refused
 ```
 
-**Check C — in-flight request completes (manual drain check):**
+**Check C - in-flight request completes (manual drain check):**
 
 Temporarily add a slow route to `main.go` *before* this check, then remove
 it before committing:
@@ -567,13 +567,13 @@ Remove the `/sleep` route before committing.
 ### PowerShell equivalents (Windows host)
 
 PowerShell does not have `pkill` / `kill -TERM`. Windows has no real
-`SIGTERM` — the closest local approximation is Ctrl+C in the console where
+`SIGTERM` - the closest local approximation is Ctrl+C in the console where
 the server is running, which the Go runtime maps to `SIGINT`, and our
 `signal.Notify` catches that path too.
 
 ```powershell
 # In the server's console window:
-# Press Ctrl+C — should log "shutting down" then "server exited cleanly"
+# Press Ctrl+C - should log "shutting down" then "server exited cleanly"
 ```
 
 For the most faithful test of `SIGTERM` + `systemctl` behavior, run this
@@ -592,14 +592,14 @@ _(record anything you had to change.)_
 
 ### Next
 
-Phase 6 — three `httptest` tests (root, healthy `/healthz`, failing `/healthz`).
+Phase 6 - three `httptest` tests (root, healthy `/healthz`, failing `/healthz`).
 
 ---
 
 ## Phase 6
 
 **Goal.** One `httptest` test per behavior. Confirms the contract holds; runs
-in milliseconds. Three tests total — root, healthy `/healthz`, failing
+in milliseconds. Three tests total - root, healthy `/healthz`, failing
 `/healthz`. No coverage chasing.
 
 Notes on the design:
@@ -607,7 +607,7 @@ Notes on the design:
 - Tests live in `app/handlers_test.go` (same package `main`, so they can read
   and mutate `version` and `healthy`).
 - Each test builds its own `gin.New()` engine and registers only the route
-  under test — keeps each test isolated from `main.go`'s wiring.
+  under test - keeps each test isolated from `main.go`'s wiring.
 - `gin.SetMode(gin.TestMode)` silences gin's debug logging in test output.
 - The healthy/failing healthz tests set the package-level `healthy` var
   directly. Use `t.Cleanup` to restore it so test order doesn't matter.
@@ -783,13 +783,13 @@ go build `
 Remove-Item Env:CGO_ENABLED, Env:GOOS, Env:GOARCH
 ```
 
-The output `gitops-api` (no `.exe`) is a Linux ELF binary — it will not run
+The output `gitops-api` (no `.exe`) is a Linux ELF binary - it will not run
 on Windows. That is correct; Jenkins will scp it to the AL2023 app VM where
 it does run.
 
 ### Verify "Done when"
 
-**Check A — binary is statically linked (run on Linux / WSL):**
+**Check A - binary is statically linked (run on Linux / WSL):**
 
 ```sh
 file ./gitops-api
@@ -798,7 +798,7 @@ file ./gitops-api
 
 If you see `dynamically linked` here, `CGO_ENABLED=0` did not take effect.
 
-**Check B — binary is reasonably small:**
+**Check B - binary is reasonably small:**
 
 ```sh
 ls -lh gitops-api
@@ -807,7 +807,7 @@ ls -lh gitops-api
 
 Should be under ~15 MB. The `-s -w` flags account for most of the savings.
 
-**Check C — no local paths leak into the binary:**
+**Check C - no local paths leak into the binary:**
 
 ```sh
 strings gitops-api | grep -E "/home|/Users|OneDrive" | head
@@ -815,9 +815,9 @@ strings gitops-api | grep -E "/home|/Users|OneDrive" | head
 ```
 
 Without `-trimpath`, you would see your build host's filesystem layout in
-this output — embarrassing for a public repo.
+this output - embarrassing for a public repo.
 
-**Check D — runs on a fresh AL2023 EC2 with no Go installed:**
+**Check D - runs on a fresh AL2023 EC2 with no Go installed:**
 
 This is the real test, deferred until M1. For now, run locally on Linux/WSL:
 
@@ -842,6 +842,6 @@ _(record anything you had to change.)_
 
 The `app/` directory is complete. From here, the only reason to touch `app/`
 is to bump `app/VERSION`. Remaining work (M1 onward) is Ansible, Terraform,
-nginx, Jenkins — `infra/`, `ansible/`, `deploy/`, `jenkins/`.
+nginx, Jenkins - `infra/`, `ansible/`, `deploy/`, `jenkins/`.
 
 ---

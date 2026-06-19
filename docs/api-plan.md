@@ -21,7 +21,7 @@ A tiny Go HTTP service, built with `gin`, that:
 - Shuts down gracefully on `SIGTERM` (10s drain).
 - Uses `gin.Default()` so every request logs one line to stdout.
 
-That is the entire surface area. Resist adding anything else — the API is
+That is the entire surface area. Resist adding anything else - the API is
 deliberately trivial so the GitOps machinery around it is the interesting
 part. (See [prd.md](prd.md) §3.3 Non-goals.)
 
@@ -29,7 +29,7 @@ part. (See [prd.md](prd.md) §3.3 Non-goals.)
 
 ```
 app/
-├── VERSION              # plain text, e.g. "0.1.0" — human-edited
+├── VERSION              # plain text, e.g. "0.1.0" - human-edited
 ├── go.mod
 ├── go.sum
 ├── main.go              # entry point, server setup, graceful shutdown
@@ -59,7 +59,7 @@ The "broken" rollback-demo build is the same command with `healthy=false`.
 Each phase produces something runnable and testable on its own. Don't move on
 until the "Done when" check passes.
 
-### Phase 1 — Scaffold and "hello world"
+### Phase 1 - Scaffold and "hello world"
 
 **Goal.** Project compiles and serves a hardcoded response on `:8080`.
 
@@ -70,14 +70,14 @@ Work:
 3. Write a minimal `main.go` that calls `gin.Default()`, registers `GET /`
    returning a hardcoded `{"app":"VM GitOps Practices","version":"dev"}`,
    and calls `r.Run(":8080")`.
-4. `echo 0.1.0 > app/VERSION` — placeholder for now, not yet wired in.
+4. `echo 0.1.0 > app/VERSION` - placeholder for now, not yet wired in.
 
 Done when:
 
 - `go run ./app` starts the server, logs "Listening and serving HTTP on :8080".
 - `curl localhost:8080/` returns the JSON with `version: "dev"`.
 
-### Phase 2 — Handlers in their own file, both endpoints
+### Phase 2 - Handlers in their own file, both endpoints
 
 **Goal.** `/` and `/healthz` work; handler logic separated from server setup.
 
@@ -85,7 +85,7 @@ Work:
 
 1. Move handler functions from `main.go` into a new `handlers.go`.
 2. Add a `GET /healthz` handler returning `200` with body `ok` (plain text, not
-   JSON — matches PRD FR-2's `200 ok`).
+   JSON - matches PRD FR-2's `200 ok`).
 3. `main.go` shrinks to: load gin, register routes, run. Nothing else yet.
 
 Done when:
@@ -94,7 +94,7 @@ Done when:
 - `curl localhost:8080/healthz` → `200 ok`.
 - `curl -i localhost:8080/healthz` shows `Content-Type: text/plain`.
 
-### Phase 3 — Version injected via `-ldflags`
+### Phase 3 - Version injected via `-ldflags`
 
 **Goal.** The version in `GET /` comes from `app/VERSION`, set at build time.
 
@@ -112,10 +112,10 @@ Done when:
 - `go build -ldflags "-X main.version=0.1.0" -o gitops-api ./app && ./gitops-api`
   → `/` returns `version: "0.1.0"`.
 - A version mismatch (running an old binary after editing `VERSION`) does
-  NOT change the response — confirming the version is baked into the binary,
+  NOT change the response - confirming the version is baked into the binary,
   not read at runtime.
 
-### Phase 4 — Failure-injection flag via `-ldflags`
+### Phase 4 - Failure-injection flag via `-ldflags`
 
 **Goal.** Baked-in `healthy=false` build returns `500` on `/healthz`.
 
@@ -123,10 +123,10 @@ Work:
 
 1. In `main.go`, declare `var healthy = "true"` (string, because
    `-ldflags -X` can only set string vars). The default `"true"` matches the
-   natural state — no mental flip when reading either the variable or the
+   natural state - no mental flip when reading either the variable or the
    build command.
 2. In the `/healthz` handler, parse `healthy` once (at package init or
-   per-request — either is fine for this scale) and return `500` with body
+   per-request - either is fine for this scale) and return `500` with body
    `unhealthy` if it is not `"true"`.
 3. Build two binaries: one with the default, one with `healthy=false`.
 
@@ -135,10 +135,10 @@ Done when:
 - Default build: `curl -i localhost:8080/healthz` → `200 ok`.
 - Failure build: `curl -i localhost:8080/healthz` → `500 unhealthy`. **AND**
   `/` still returns the version (the flag affects only `/healthz`).
-- The flag is not readable from outside — there is no debug endpoint that
+- The flag is not readable from outside - there is no debug endpoint that
   reveals its value. (It's a *test hook*, not a *feature*.)
 
-### Phase 5 — Graceful shutdown
+### Phase 5 - Graceful shutdown
 
 **Goal.** `SIGTERM` triggers a 10s drain instead of an instant kill. (PRD
 NFR-1 part b.)
@@ -159,9 +159,9 @@ Done when:
   in-flight connections complete.
 - Manual drain check: hit a synthetic slow request and send `SIGTERM`
   mid-flight. The slow request completes. (For this you can add a temporary
-  `/sleep` route locally — delete before commit.)
+  `/sleep` route locally - delete before commit.)
 
-### Phase 6 — Tests (minimal, per PRD decision)
+### Phase 6 - Tests (minimal, per PRD decision)
 
 **Goal.** One `httptest` test per handler. Confirms the contract holds; runs
 in milliseconds.
@@ -169,11 +169,11 @@ in milliseconds.
 Work:
 
 1. `handlers_test.go`:
-   - `TestRootHandler` — builds a `gin` engine, registers the root route,
+   - `TestRootHandler` - builds a `gin` engine, registers the root route,
      uses `httptest.NewRecorder`, asserts status 200 and JSON body shape.
      Sets the package-level `version` to a known value in the test.
-   - `TestHealthzHealthy` — `healthy="true"`, expect 200 + `ok`.
-   - `TestHealthzFailing` — `healthy="false"`, expect 500 + `unhealthy`.
+   - `TestHealthzHealthy` - `healthy="true"`, expect 200 + `ok`.
+   - `TestHealthzFailing` - `healthy="false"`, expect 500 + `unhealthy`.
 2. Run `go test ./app -v`.
 
 Done when:
@@ -183,7 +183,7 @@ Done when:
 - Coverage is not a target; do not chase it. Three tests = three behaviors
   covered. Move on.
 
-### Phase 7 — Build hardening for the Jenkins pipeline
+### Phase 7 - Build hardening for the Jenkins pipeline
 
 **Goal.** The binary is what Jenkins expects: static, stripped, no CGO.
 
@@ -191,7 +191,7 @@ Work:
 
 1. Set `CGO_ENABLED=0` in the build command (static binary, no glibc surprise
    on the target VM).
-2. Add `-trimpath` (removes local file paths from binary — cleaner for a
+2. Add `-trimpath` (removes local file paths from binary - cleaner for a
    portfolio binary someone might `strings` out of curiosity).
 3. Add `-s -w` to `-ldflags` (strips debug info; halves binary size).
 4. Final build command (this is what goes in `Jenkinsfile.build`):
@@ -236,7 +236,7 @@ After Phase 7 is done, the API is ready for the rest of the project:
 - **Milestone M3** (PRD §9 / plan.md Phase C) is wiring Phase 7's build
   command into `jenkins/Jenkinsfile.build`.
 - **Milestone M6** (PRD §9 / plan.md Phase F) is when the `healthy=false`
-  build matters — for the rollback demo. The API code itself is already
+  build matters - for the rollback demo. The API code itself is already
   done at that point.
 
 So this whole document is the M1-prerequisite work: get the binary right

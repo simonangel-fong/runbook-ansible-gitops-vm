@@ -1,7 +1,7 @@
 # ec2_mon.tf
 
 # ##############################
-# SG: mon
+# SG
 # ##############################
 resource "aws_security_group" "mon" {
   name        = "${local.project_name}-sg-mon"
@@ -48,7 +48,7 @@ resource "aws_vpc_security_group_egress_rule" "mon_egress_all" {
 }
 
 # ##############################
-# SG glue: allow mon -> app:8080 scrapes
+# SG glue: allow monitor access app:8080 to scrape
 # ##############################
 resource "aws_vpc_security_group_ingress_rule" "app_8080_from_mon" {
   security_group_id            = aws_security_group.app.id
@@ -61,7 +61,7 @@ resource "aws_vpc_security_group_ingress_rule" "app_8080_from_mon" {
 
 
 # ##############################
-# EC2: Mon
+# EC2: Monitor
 # ##############################
 resource "aws_instance" "mon" {
   ami                    = data.aws_ami.ubuntu.id

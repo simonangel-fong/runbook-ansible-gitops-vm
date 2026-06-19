@@ -32,7 +32,7 @@ var (
 	apiInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "gitops_api_info",
-			Help: "Build info — always 1, labels carry version and host.",
+			Help: "Build info - always 1, labels carry version and host.",
 		},
 		[]string{"version", "host"},
 	)
@@ -50,8 +50,7 @@ func init() {
 	prometheus.MustRegister(requestsTotal, requestDuration, apiInfo, apiHealthy)
 }
 
-// initMetrics seeds the gauges with their startup values. Counters and the
-// histogram are populated by middleware as requests arrive.
+// initMetrics seeds the gauges with their startup values.
 func initMetrics() {
 	host, _ := os.Hostname()
 	apiInfo.WithLabelValues(version, host).Set(1)
@@ -68,8 +67,7 @@ func metricsMiddleware() gin.HandlerFunc {
 		start := time.Now()
 		c.Next()
 
-		// FullPath() returns the matched route template (e.g. "/healthz"),
-		// not the raw URL — keeps label cardinality bounded.
+		// FullPath() returns the matched route template
 		path := c.FullPath()
 		if path == "" {
 			path = "unknown"

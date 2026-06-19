@@ -1,6 +1,10 @@
+# providers.tf
+
+# ##############################
+# Version
+# ##############################
 terraform {
   required_version = ">= 1.7"
-
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -16,10 +20,13 @@ terraform {
     }
   }
 
+  # remote state
   backend "s3" {}
 }
 
-
+# ##############################
+# Providers
+# ##############################
 provider "aws" {
   region  = local.aws_region
   profile = local.project_name

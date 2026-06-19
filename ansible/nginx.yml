@@ -1,9 +1,5 @@
 ---
-# nginx.yml — Phase E LB weight setter.
-#
-# Re-runs during each canary phase with a new weight_canary. The Jenkinsfile
-# passes the value via -e; this playbook templates the upstream block,
-# validates, and gracefully reloads nginx.
+# nginx.yml: LB weight setter.
 #
 # Defaults to 0/100 (no canary traffic) if invoked without args, which is the
 # safe "freeze stable" posture used after a successful promote.
@@ -34,7 +30,7 @@
     - nginx
 
   post_tasks:
-    - name: Smoke test — LB returns 200 from /
+    - name: Smoke test - LB returns 200 from /
       ansible.builtin.uri:
         url: "http://{{ ansible_host }}/"
         return_content: true

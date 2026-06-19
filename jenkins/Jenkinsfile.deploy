@@ -1,13 +1,6 @@
-// jenkins/Jenkinsfile.deploy — Phase E (canary).
+// jenkins/Jenkinsfile.deploy
 //
-// Reads deploy/release.yaml to determine target version + phase schedule.
-// Pre-deploys canary VM, then walks through weight phases with a health gate
-// at each step. Only promotes stable hosts after the 100% phase succeeds.
-//
-// Failure during any phase aborts the pipeline and reverts LB traffic to
-// stable-only (canary weight = 0). The canary VM is *left* on the new
-// binary — full revert (symlink swap back) is Phase F.
-//
+// The pipeline reads deploy/release.yaml to determine target version + phase schedule.
 // Prereqs (one-time UI):
 //   - SSH Agent plugin
 //   - Pipeline Utility Steps plugin (for readYaml)
@@ -23,6 +16,7 @@ pipeline {
     timeout(time: 30, unit: 'MINUTES')
   }
 
+// poll
   triggers {
     pollSCM('H/2 * * * *')
   }
@@ -41,16 +35,11 @@ pipeline {
           env.STABLE_HOSTS_CSV  = release.stable_hosts.join(',')
           env.HC_INTERVAL       = release.health_check.interval_seconds.toString()
           env.HC_THRESHOLD      = release.health_check.failure_threshold.toString()
-          // Demo affordance: if release.yaml declares build_healthy: false,
-          // bake healthy=false into the binary so /healthz returns 500.
-          // Default true (a missing field reads as "yes, healthy").
           env.BUILD_HEALTHY     = ((release.build_healthy != null ? release.build_healthy : true)).toString()
 
-          // Round-trip phases through JSON via the sandboxed writeJSON /
-          // readJSON so we can re-parse in the canary loop stage. (env vars
-          // are strings only; groovy.json.JsonOutput is blocked by sandbox.)
           writeJSON file: '.phases.json', json: release.phases
 
+          // confirm
           echo """
           === release.yaml parsed ===
           version       : ${env.APP_VERSION}
@@ -63,25 +52,31 @@ pipeline {
       }
     }
 
+    // build go: based on the metadata from deploy/release.yaml
     stage('Build') {
       steps {
         sh '''
           set -eu
           cd app
           go version
+
           LDFLAGS="-X main.version=${APP_VERSION}"
+          
           if [ "${BUILD_HEALTHY}" = "false" ]; then
-            echo "!!! build_healthy=false — baking healthy=false into the binary (failure demo) !!!"
+            echo "!!! build_healthy=false - baking healthy=false into the binary (failure demo) !!!"
+            
             LDFLAGS="${LDFLAGS} -X main.healthy=false"
           fi
+          
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-            go build -ldflags "${LDFLAGS}" \
-                     -o "${WORKSPACE}/gitops-api" .
+            go build -ldflags "${LDFLAGS}" -o "${WORKSPACE}/gitops-api" .
+          
           ls -la "${WORKSPACE}/gitops-api"
         '''
       }
     }
 
+    // Deploy new release on canary instance
     stage('Pre-deploy: canary') {
       steps {
         sshagent(credentials: ['fleet-key']) {
@@ -89,22 +84,24 @@ pipeline {
             set -eu
             echo "=== Deploying ${APP_VERSION} to canary host ${CANARY_HOST} ==="
             ansible-playbook \
+              "${WORKSPACE}/ansible/deploy.yml"       \
               -i "${WORKSPACE}/ansible/inventory.ini" \
-              "${WORKSPACE}/ansible/deploy.yml" \
-              --limit "${CANARY_HOST}" \
+              --limit "${CANARY_HOST}"                \
               -e binary_src="${WORKSPACE}/gitops-api" \
-              -e app_version="${APP_VERSION}" \
+              -e app_version="${APP_VERSION}"         \
               -e expect_healthy="${BUILD_HEALTHY}"
           '''
         }
       }
     }
 
+    // scale out cancary triffic with nginx
     stage('Canary phase loop') {
       steps {
         script {
           def phases = readJSON file: '.phases.json'
 
+          // loop
           phases.eachWithIndex { phase, i ->
             def phaseNum = i + 1
             def total    = phases.size()
@@ -115,15 +112,17 @@ pipeline {
               echo "=== Shifting LB weight: canary=${w}%, stable=${100 - w}% ==="
               sshagent(credentials: ['fleet-key']) {
                 sh """
-                  ansible-playbook \
-                    -i \"\${WORKSPACE}/ansible/inventory.ini\" \
-                    \"\${WORKSPACE}/ansible/nginx.yml\" \
+                  ansible-playbook                              \
+                    -i \"\${WORKSPACE}/ansible/inventory.ini\"  \
+                    \"\${WORKSPACE}/ansible/nginx.yml\"         \
                     -e weight_canary=${w}
                 """
               }
-
+              // when still hold
               if (hold > 0) {
+                
                 echo "=== Health gate: ${hold}s, polling /healthz every ${env.HC_INTERVAL}s ==="
+                
                 sshagent(credentials: ['fleet-key']) {
                   // Gate: count consecutive 200s vs. consecutive failures.
                   // Threshold failures aborts the pipeline.
@@ -136,7 +135,7 @@ pipeline {
                     URL=http://${env.CANARY_HOST}:8080/healthz
 
                     while [ \$(date +%s) -lt \$DEADLINE ]; do
-                      # Run curl FROM jump (the Jenkins agent) — the App SG
+                      # Run curl FROM jump (the Jenkins agent) - the App SG
                       # allows jump:* -> app:8080.
                       ssh -o StrictHostKeyChecking=accept-new \
                           -o UserKnownHostsFile=/dev/null \
@@ -151,7 +150,7 @@ pipeline {
                         CONSEC_FAIL=\$((CONSEC_FAIL + 1))
                         echo \"[health] \$(date +%T) -> \$STATUS FAIL (consec_fail=\$CONSEC_FAIL/\$THRESHOLD)\"
                         if [ \$CONSEC_FAIL -ge \$THRESHOLD ]; then
-                          echo \"[health] threshold reached — aborting\"
+                          echo \"[health] threshold reached - aborting\"
                           exit 1
                         fi
                       fi
@@ -168,44 +167,44 @@ pipeline {
       }
     }
 
+    // Promote stable hosts
     stage('Promote: stable hosts') {
       steps {
         sshagent(credentials: ['fleet-key']) {
           sh '''
             set -eu
             echo "=== Promoting stable hosts: ${STABLE_HOSTS_CSV} ==="
-            # mark_last_good=true here so a successful promote records this
-            # version as the rollback target for any future failed deploy.
-            ansible-playbook \
-              -i "${WORKSPACE}/ansible/inventory.ini" \
-              "${WORKSPACE}/ansible/deploy.yml" \
-              --limit "${STABLE_HOSTS_CSV}" \
-              -e binary_src="${WORKSPACE}/gitops-api" \
-              -e app_version="${APP_VERSION}" \
+            ansible-playbook                            \
+              -i "${WORKSPACE}/ansible/inventory.ini"   \
+              "${WORKSPACE}/ansible/deploy.yml"         \
+              --limit "${STABLE_HOSTS_CSV}"             \
+              -e binary_src="${WORKSPACE}/gitops-api"   \
+              -e app_version="${APP_VERSION}"           \
               -e mark_last_good=true
 
             echo "=== Also marking canary host as last-good (it's on the same version now) ==="
-            ansible-playbook \
-              -i "${WORKSPACE}/ansible/inventory.ini" \
-              "${WORKSPACE}/ansible/deploy.yml" \
-              --limit "${CANARY_HOST}" \
-              -e binary_src="${WORKSPACE}/gitops-api" \
-              -e app_version="${APP_VERSION}" \
+            ansible-playbook                              \
+              -i "${WORKSPACE}/ansible/inventory.ini"     \
+              "${WORKSPACE}/ansible/deploy.yml"           \
+              --limit "${CANARY_HOST}"                    \
+              -e binary_src="${WORKSPACE}/gitops-api"     \
+              -e app_version="${APP_VERSION}"             \
               -e mark_last_good=true
           '''
         }
       }
     }
 
+    // Set traffic to steady
     stage('Reset LB to balanced steady state') {
       steps {
         sshagent(credentials: ['fleet-key']) {
           sh '''
             set -eu
             echo "=== All hosts on ${APP_VERSION}; resetting LB to 50/50 ==="
-            ansible-playbook \
-              -i "${WORKSPACE}/ansible/inventory.ini" \
-              "${WORKSPACE}/ansible/nginx.yml" \
+            ansible-playbook                            \
+              -i "${WORKSPACE}/ansible/inventory.ini"   \
+              "${WORKSPACE}/ansible/nginx.yml"          \
               -e weight_canary=50
           '''
         }
@@ -217,33 +216,34 @@ pipeline {
     success {
       echo "[success] gitops-api ${env.APP_VERSION} promoted to all app VMs."
     }
+    // if fail, reset traffic
     failure {
-      echo "[failure] Aborted — draining LB, rolling canary back to last-good, restoring balance."
+      echo "[failure] Aborted - draining LB, rolling canary back to last-good, restoring balance."
       sshagent(credentials: ['fleet-key']) {
         sh '''
           set +e   # let each step report independently; don't abort the post block
 
           echo "[failure] Step 1/3: drain LB traffic from canary"
-          ansible-playbook \
-            -i "${WORKSPACE}/ansible/inventory.ini" \
-            "${WORKSPACE}/ansible/nginx.yml" \
+          ansible-playbook                            \
+            -i "${WORKSPACE}/ansible/inventory.ini"   \
+            "${WORKSPACE}/ansible/nginx.yml"          \
             -e weight_canary=0
           DRAIN_RC=$?
 
           echo "[failure] Step 2/3: roll canary back to last-good version"
-          ansible-playbook \
-            -i "${WORKSPACE}/ansible/inventory.ini" \
+          ansible-playbook                              \
+            -i "${WORKSPACE}/ansible/inventory.ini"     \
             "${WORKSPACE}/ansible/rollback.yml"
           ROLLBACK_RC=$?
 
           if [ $ROLLBACK_RC -eq 0 ]; then
             echo "[failure] Step 3/3: reset LB to balanced (both VMs healthy on last-good)"
-            ansible-playbook \
-              -i "${WORKSPACE}/ansible/inventory.ini" \
-              "${WORKSPACE}/ansible/nginx.yml" \
+            ansible-playbook                            \
+              -i "${WORKSPACE}/ansible/inventory.ini"   \
+              "${WORKSPACE}/ansible/nginx.yml"          \
               -e weight_canary=50
           else
-            echo "[failure] Skipping LB rebalance — rollback failed; leaving canary drained for manual intervention"
+            echo "[failure] Skipping LB rebalance - rollback failed; leaving canary drained for manual intervention"
           fi
 
           echo "[failure] Recovery summary: drain rc=$DRAIN_RC, rollback rc=$ROLLBACK_RC"

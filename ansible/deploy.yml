@@ -1,31 +1,15 @@
 ---
-# deploy.yml — Phase E shape.
-#
-# Lays the binary in a versioned release directory and points the
-# /opt/app/current symlink at it. Atomic symlink swap + systemctl restart
-# is what makes Phase F's rollback trivial: re-point symlink at the prior
-# release dir, restart.
-#
-# Layout produced:
-#   /opt/app/
-#     ├── releases/
-#     │   ├── 0.1.0/gitops-api
-#     │   └── 0.2.0/gitops-api
-#     └── current -> releases/0.2.0
-#
-# Bootstrap step (one-time): if /opt/app/current already exists as a regular
-# directory (left over from Phase B/D), it is removed before the symlink can
-# be created.
+# deploy.yml
 #
 # Run manually from jump (against all apps):
 #   ansible-playbook deploy.yml \
 #     -e binary_src=/path/to/gitops-api \
 #     -e app_version=$(cat ../app/VERSION)
 #
-# Run targeting only the canary (Phase E pre-deploy):
+# Run targeting only the canary (pre-deploy):
 #   ansible-playbook deploy.yml --limit app_canary ...
 #
-# Run targeting only stable hosts (Phase E promote step):
+# Run targeting only stable hosts (promote step):
 #   ansible-playbook deploy.yml --limit app_stable ...
 
 - name: Deploy gitops-api to app VMs
@@ -55,15 +39,12 @@
       when: not binary_stat.stat.exists
 
   tasks:
-    # One-time migration: if /opt/app/current is a regular directory left over
-    # from Phase B/D, remove it so the symlink can be created. No-op once
-    # /opt/app/current is already a symlink.
-    - name: Check whether /opt/app/current is a regular dir (pre-Phase-E state)
+    - name: Check whether /opt/app/current is a regular dir
       ansible.builtin.stat:
         path: /opt/app/current
       register: current_stat
 
-    - name: Migrate — remove /opt/app/current if it is a regular directory
+    - name: Migrate - remove /opt/app/current if it is a regular directory
       ansible.builtin.file:
         path: /opt/app/current
         state: absent
@@ -87,9 +68,6 @@
         owner: appuser
         group: appuser
         mode: "0755"
-      # Re-deploying the same version writes a new binary into the existing
-      # release dir; the symlink doesn't change, so the restart must be
-      # notified from THIS task (not the symlink swap below).
       notify: Restart gitops-api
 
     - name: Atomically swap /opt/app/current to this release
@@ -122,14 +100,9 @@
     - name: Flush handlers so smoke test runs against the new binary
       ansible.builtin.meta: flush_handlers
 
-    - name: Smoke test — GET /healthz
+    - name: Smoke test - GET /healthz
       ansible.builtin.uri:
         url: "http://{{ ansible_host }}:8080/healthz"
-        # Default is expect_healthy=true: the smoke test wants 200.
-        # When demoing the canary failure path (release.yaml: build_healthy:
-        # false), the binary is built with healthy=false and /healthz returns
-        # 500. The smoke test then accepts 500 so deploy succeeds, leaving
-        # the canary gate (in the Jenkinsfile) to be what trips the failure.
         status_code: "{{ [200] if (expect_healthy | default(true) | bool) else [200, 500] }}"
       delegate_to: localhost
       become: false
@@ -138,7 +111,7 @@
       register: healthz
       until: healthz.status in ([200] if (expect_healthy | default(true) | bool) else [200, 500])
 
-    - name: Smoke test — GET / reports the expected version
+    - name: Smoke test - GET / reports the expected version
       ansible.builtin.uri:
         url: "http://{{ ansible_host }}:8080/"
         return_content: true
@@ -152,11 +125,6 @@
           - root.json.version == app_version
         fail_msg: "{{ inventory_hostname }} reports {{ root.json.version }}, expected {{ app_version }}"
 
-    # Phase F: write the last-known-good version pointer so rollback knows
-    # where to point the symlink if a future deploy fails. Only fired when
-    # the caller (Jenkins promote stage) sets mark_last_good=true — we
-    # don't want the canary pre-deploy to be marked good before it's been
-    # through the full phase loop.
     - name: Record this version as last-good
       ansible.builtin.copy:
         content: "{{ app_version }}\n"

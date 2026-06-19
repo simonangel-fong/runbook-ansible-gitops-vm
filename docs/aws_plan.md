@@ -1,19 +1,19 @@
-# AWS Infrastructure Plan — Implementation Steps
+# AWS Infrastructure Plan - Implementation Steps
 
 | Field         | Value                                                |
 | ------------- | ---------------------------------------------------- |
 | Status        | Draft v2                                             |
 | Author        | Simon Fong                                           |
 | Last updated  | 2026-06-16                                           |
-| Companion doc | [aws_design.md](aws_design.md) — what we're building |
+| Companion doc | [aws_design.md](aws_design.md) - what we're building |
 | Scope         | Build order for the `infra/` Terraform module        |
 
 This document is the **how**. [aws_design.md](aws_design.md) is the
-**what and why** — read it first.
+**what and why** - read it first.
 
 **Build philosophy.** Each phase from 3 onward lands one more VM that you
 can SSH into, with its SG and instance in the same file. If a phase
-breaks, you fix the one file and re-apply — no jumping back to an earlier
+breaks, you fix the one file and re-apply - no jumping back to an earlier
 phase. Inventory rendering and Ansible bootstrap are out of scope for
 this doc; they live in [plan.md](plan.md) under the Ansible milestones.
 
@@ -64,10 +64,10 @@ echo "tfplan"       >> .gitignore
 02_providers.tf      terraform + provider config + backend
 03_local.tf          locals (region, project name, all CIDRs, static IPs)
 04_output.tf         outputs
-05_vpc.tf            Phase 2 — network (VPC, IGW, subnets, RTs)
-06_ec2_jump.tf       Phase 3 — jump host  (AMI + keypair data + sg + instance + EIP)
-07_ec2_lb.tf         Phase 4 — load balancer (sg + instance + EIP)
-08_ec2_app.tf        Phase 5 — app VMs (sg + 2× instance)
+05_vpc.tf            Phase 2 - network (VPC, IGW, subnets, RTs)
+06_ec2_jump.tf       Phase 3 - jump host  (AMI + keypair data + sg + instance + EIP)
+07_ec2_lb.tf         Phase 4 - load balancer (sg + instance + EIP)
+08_ec2_app.tf        Phase 5 - app VMs (sg + 2× instance)
 ```
 
 One file per role from Phase 2 onward. Each EC2 file contains the SG, the
@@ -80,7 +80,7 @@ workstation IP) and must not be committed.
 
 ---
 
-## Phase 1 — Bootstrap
+## Phase 1 - Bootstrap
 
 Set up the Terraform plumbing: remote state backend, provider config,
 input variables. Ends with `terraform plan` printing a clean no-op
@@ -156,7 +156,7 @@ after the first apply.
 
 ---
 
-## Phase 2 — Network
+## Phase 2 - Network
 
 VPC, IGW, three subnets (DMZ, App, Mgmt), two route tables (public,
 private). No instances, no SGs yet.
@@ -167,13 +167,13 @@ private). No instances, no SGs yet.
 
 Resources (see [aws_design.md §4](aws_design.md) for the spec):
 
-- `aws_vpc.main` — `10.0.0.0/16`, DNS hostnames + support on
+- `aws_vpc.main` - `10.0.0.0/16`, DNS hostnames + support on
 - `aws_internet_gateway.main`
-- `aws_subnet.dmz` — `10.0.10.0/24`, `map_public_ip_on_launch = true`
-- `aws_subnet.app` — `10.0.20.0/24`, `map_public_ip_on_launch = false`
-- `aws_subnet.mgmt` — `10.0.90.0/24`, `map_public_ip_on_launch = true`
-- `aws_route_table.public` — `0.0.0.0/0` → IGW
-- `aws_route_table.private` — local only, no default route
+- `aws_subnet.dmz` - `10.0.10.0/24`, `map_public_ip_on_launch = true`
+- `aws_subnet.app` - `10.0.20.0/24`, `map_public_ip_on_launch = false`
+- `aws_subnet.mgmt` - `10.0.90.0/24`, `map_public_ip_on_launch = true`
+- `aws_route_table.public` - `0.0.0.0/0` → IGW
+- `aws_route_table.private` - local only, no default route
 - Three `aws_route_table_association` (DMZ + Mgmt → public; App → private)
 
 ### Steps
@@ -202,7 +202,7 @@ Cost: $0/mo. VPC, subnets, RTs, IGW are all free.
 
 ---
 
-## Phase 3 — Jump Host
+## Phase 3 - Jump Host
 
 First VM. Lives in the Mgmt subnet, has an EIP, accepts SSH from
 `var.admin_cidr` only. This is the only VM you SSH to from your laptop;
@@ -210,8 +210,8 @@ all subsequent phases reach their VMs _through_ it.
 
 ### Files
 
-- `infra/03_local.tf` — adds `ec2_jump_cidr` to the locals block
-- `infra/06_ec2_jump.tf` — AMI + keypair data sources + `sg-jump` + `aws_instance.jump` + `aws_eip.jump`
+- `infra/03_local.tf` - adds `ec2_jump_cidr` to the locals block
+- `infra/06_ec2_jump.tf` - AMI + keypair data sources + `sg-jump` + `aws_instance.jump` + `aws_eip.jump`
 
 Resources:
 
@@ -286,15 +286,15 @@ volume. EIP free while attached.
 
 ---
 
-## Phase 4 — Load Balancer
+## Phase 4 - Load Balancer
 
 Public-facing nginx VM in the DMZ subnet. Reached on port 80 from the
 internet; SSH only from jump.
 
 ### Files
 
-- `infra/03_local.tf` — adds `ec2_lb_cidr = "10.0.10.20"` to the locals block
-- `infra/07_ec2_lb.tf` — `sg-lb` + `aws_instance.lb` + `aws_eip.lb`
+- `infra/03_local.tf` - adds `ec2_lb_cidr = "10.0.10.20"` to the locals block
+- `infra/07_ec2_lb.tf` - `sg-lb` + `aws_instance.lb` + `aws_eip.lb`
 
 Resources:
 
@@ -329,7 +329,7 @@ resource "aws_eip" "lb" {
 ```
 
 The `lb_ssh_from_jump` rule uses `referenced_security_group_id =
-aws_security_group.jump.id` — SG-to-SG reference, not a CIDR. This is the
+aws_security_group.jump.id` - SG-to-SG reference, not a CIDR. This is the
 on-prem-style bastion pattern: SSH access flows by *role* (jump → lb), not
 by IP.
 
@@ -353,7 +353,7 @@ ssh -i ~/.ssh/ansible ec2-user@<jump-public-ip> `
   "ssh -o StrictHostKeyChecking=accept-new ec2-user@10.0.10.20 hostname"
 ```
 
-Wait — jump can't SSH to lb yet because jump doesn't have the `ansible`
+Wait - jump can't SSH to lb yet because jump doesn't have the `ansible`
 private key in `~/.ssh/`. That's an **Ansible-layer concern** (handled by
 the bootstrap playbook in [plan.md](plan.md) Phase A). For now, verify
 network reachability only:
@@ -368,16 +368,16 @@ Cost: +~$8/mo (`t3.micro` + EBS).
 
 ---
 
-## Phase 5 — App VMs
+## Phase 5 - App VMs
 
-Two app VMs in the App subnet. **No EIPs, no public IPs** — reachable
+Two app VMs in the App subnet. **No EIPs, no public IPs** - reachable
 only from inside the VPC. App subnet has no route to the internet, so
 these VMs cannot reach the outside world even outbound.
 
 ### Files
 
-- `infra/03_local.tf` — adds `ec2_app_vm1_cidr = "10.0.20.11"` and `ec2_app_vm2_cidr = "10.0.20.12"`
-- `infra/08_ec2_app.tf` — `sg-app` + `aws_instance.app_vm1` + `aws_instance.app_vm2`
+- `infra/03_local.tf` - adds `ec2_app_vm1_cidr = "10.0.20.11"` and `ec2_app_vm2_cidr = "10.0.20.12"`
+- `infra/08_ec2_app.tf` - `sg-app` + `aws_instance.app_vm1` + `aws_instance.app_vm2`
 
 Resources:
 
@@ -417,7 +417,7 @@ resource "aws_instance" "app_vm2" {
 ```
 
 Two ingress rules to `sg-app` on port 8080 (one from `sg-lb`, one from
-`sg-jump`) look redundant but aren't — `sg-lb` carries production traffic
+`sg-jump`) look redundant but aren't - `sg-lb` carries production traffic
 while `sg-jump` is the source for the deploy pipeline's `curl
 app-vm1:8080/healthz` check. Splitting them keeps the *intent* of each
 rule visible in the SG.
@@ -442,14 +442,14 @@ ssh -i ~/.ssh/ansible ec2-user@<jump-public-ip> `
 ```
 
 The "no internet" check needs SSH all the way to app-vm1, which depends
-on jump having the keypair — Ansible-layer. Defer to Phase 6 smoke test
+on jump having the keypair - Ansible-layer. Defer to Phase 6 smoke test
 (or to the Ansible bootstrap milestone).
 
 Cost: +~$16/mo (2× `t3.micro` + EBS).
 
 ---
 
-## Phase 6 — Outputs, Smoke Test, Teardown
+## Phase 6 - Outputs, Smoke Test, Teardown
 
 Finalize outputs (so the demo runbook is copy-pasteable) and verify the
 whole AWS layer end-to-end. After this, control passes to the Ansible
@@ -497,7 +497,7 @@ installing the `ansible` private key on jump so it can SSH onward).
 ### Teardown
 
 `terraform destroy` removes everything in the module. **Does not remove**
-the S3 state bucket or DynamoDB lock table from Phase 1 — keep these
+the S3 state bucket or DynamoDB lock table from Phase 1 - keep these
 between demo cycles so re-provisioning is fast.
 
 To fully wipe afterward:
@@ -525,6 +525,6 @@ Total: ~$45/mo if left running. `terraform destroy` between demo
 sessions keeps it near $0.
 
 After Phase 6, the AWS layer is complete. Next milestone is the Ansible
-bootstrap playbook (covered in [plan.md](plan.md), Phase A) — including
+bootstrap playbook (covered in [plan.md](plan.md), Phase A) - including
 inventory rendering, `/etc/hosts` setup, and getting the `ansible`
 keypair onto jump so it can reach the fleet.

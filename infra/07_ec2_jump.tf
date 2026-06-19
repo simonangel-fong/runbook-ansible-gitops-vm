@@ -1,12 +1,15 @@
 # ec2_jump.tf
 
-# AMI — Ubuntu 24.04 LTS (Noble), Canonical-owned, gp3 root volume.
+# ##############################
+# AMI
+# ##############################
 data "aws_ami" "ubuntu" {
   most_recent = true
   owners      = ["099720109477"] # Canonical
 
   filter {
-    name   = "name"
+    name = "name"
+    # Ubuntu 24.04 LTS (Noble), Canonical-owned, gp3 root volume.
     values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
   }
 
@@ -63,15 +66,15 @@ resource "aws_instance" "jump" {
   key_name               = aws_key_pair.fleet.key_name
 
   user_data = templatefile("${path.module}/cloud-init/jump.yaml.tftpl", {
-    project_name           = local.project_name
-    github_owner           = local.github_owner
-    github_repo            = local.github_repo
-    fleet_private_key_b64  = base64encode(tls_private_key.fleet.private_key_pem)
-    jump_private_ip        = local.ec2_jump_cidr
-    lb_private_ip          = aws_instance.lb.private_ip
-    app_vm1_private_ip     = aws_instance.app_vm1.private_ip
-    app_vm2_private_ip     = aws_instance.app_vm2.private_ip
-    mon_private_ip         = aws_instance.mon.private_ip
+    project_name          = local.project_name
+    github_owner          = local.github_owner
+    github_repo           = local.github_repo
+    fleet_private_key_b64 = base64encode(tls_private_key.fleet.private_key_pem)
+    jump_private_ip       = local.ec2_jump_cidr
+    lb_private_ip         = aws_instance.lb.private_ip
+    app_vm1_private_ip    = aws_instance.app_vm1.private_ip
+    app_vm2_private_ip    = aws_instance.app_vm2.private_ip
+    mon_private_ip        = aws_instance.mon.private_ip
   })
 
   # Replace the instance when the bootstrap script changes
