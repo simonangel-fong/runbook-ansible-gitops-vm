@@ -52,7 +52,7 @@ terraform -chdir=infra apply -auto-approve
 terraform -chdir=infra output ssh_jump
 
 # on jump
-cd ~/Project_GitOps_VM/ansible/
+cd ~/runbook-ansible-gitops-vm/ansible/
 ansible mon -m ping -o
 # mon | SUCCESS => {"changed": false,"ping": "pong"}
 

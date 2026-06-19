@@ -5,7 +5,7 @@ locals {
   # #####################
   project_name = "gitops-vm"
   github_owner = "simonangel-fong"
-  github_repo  = "Project_GitOps_VM"
+  github_repo  = "runbook-ansible-gitops-vm"
 
   # #####################
   # AWS

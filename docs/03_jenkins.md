@@ -38,7 +38,8 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 - credential
   - fleet-key
 - Set pipeline
-  - url: https://github.com/simonangel-fong/Project_GitOps_VM.git
+  - url: https://github.com/simonangel-fong/runbook-ansible-gitops-vm.git
   - pipeline path: jenkins/Jenkinsfile.deploy
 
 ![jenkins_ui](./pic/jenkins_ui.png)
+

@@ -41,7 +41,7 @@ terraform -chdir=infra/ output -raw ssh_jump
 ssh -i infra/keys/gitops-vm.pem ubuntu@16.52.14.216
 
 # Confirm Ansible
-cd ~/Project_GitOps_VM/ansible
+cd ~/runbook-ansible-gitops-vm/ansible
 ansible all -m ping -o
 # jump | SUCCESS => {"changed": false,"ping": "pong"}
 # lb | SUCCESS => {"changed": false,"ping": "pong"}

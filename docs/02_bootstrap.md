@@ -13,7 +13,7 @@
 ## Boostrap VM-based Environment via Ansible
 
 ```sh
-cd ~/Project_GitOps_VM/ansible
+cd ~/runbook-ansible-gitops-vm/ansible
 ansible all -m ping -o
 # jump | SUCCESS => {"changed": false,"ping": "pong"}
 # lb | SUCCESS => {"changed": false,"ping": "pong"}
@@ -73,7 +73,7 @@ ansible-playbook bootstrap.yml
 ### Build Go
 
 ```sh
-cd ~/Project_GitOps_VM/app
+cd ~/runbook-ansible-gitops-vm/app
 VERSION=$(cat VERSION)
 go build -ldflags "-X main.version=$VERSION" -o /tmp/gitops-api .
 ls -la /tmp/gitops-api
@@ -83,7 +83,7 @@ ls -la /tmp/gitops-api
 ### Deploy app via ansible
 
 ```sh
-cd ~/Project_GitOps_VM/ansible
+cd ~/runbook-ansible-gitops-vm/ansible
 ansible-playbook deploy.yml -e binary_src=/tmp/gitops-api -e app_version=$VERSION
 
 # confirm
