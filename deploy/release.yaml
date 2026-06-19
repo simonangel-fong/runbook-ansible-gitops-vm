@@ -9,11 +9,11 @@
 #   health_check      - Jenkins polls http://{canary_host}:8080/healthz every interval_seconds during each phase.
 #                       failure_threshold consecutive non-200s aborts.
 
-version: "0.3.2"
+version: "0.3.1"
 
 # control health check
-# build_healthy: true # happy
-build_healthy: false  # false
+build_healthy: true # happy
+# build_healthy: false  # false
 
 phases:
   - weight_canary: 20
